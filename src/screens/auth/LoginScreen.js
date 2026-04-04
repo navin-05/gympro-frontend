@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import Colors from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+
+const ERROR_COLOR = '#ff4d4f';
 
 const LoginScreen = ({ navigation }) => {
   const { login } = useAuth();
@@ -13,31 +23,108 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  const clearErrorState = useCallback(() => {
+    setError('');
+    shakeAnim.stopAnimation();
+    shakeAnim.setValue(0);
+  }, [shakeAnim]);
+
+  const triggerShake = useCallback(() => {
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 12, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -12, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  }, [shakeAnim]);
+
+  const onEmailChange = (text) => {
+    setEmail(text);
+    clearErrorState();
+  };
+
+  const onPasswordChange = (text) => {
+    setPassword(text);
+    clearErrorState();
+  };
+
+  const isInvalidCredentialsFailure = (errMsg) => {
+    if (!errMsg || typeof errMsg !== 'string') return true;
+    const m = errMsg.toLowerCase();
+    if (m.includes('network') || m.includes('timeout') || m.includes('no response')) return false;
+    return true;
+  };
 
   const handleLogin = async () => {
+    if (loading) return;
+
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Toast.show({
+        type: 'error',
+        text1: 'Please fill in all fields',
+        position: 'top',
+      });
       return;
     }
-    console.log('[LoginScreen] Attempting login for:', email.trim().toLowerCase());
+
+    console.log('Login started');
     setLoading(true);
+    clearErrorState();
+
     try {
       const result = await login(email.trim().toLowerCase(), password);
-      console.log('[LoginScreen] Login result:', JSON.stringify(result));
-      setLoading(false);
+
       if (!result.success) {
-        Alert.alert('Login Failed', result.error || 'Unknown error');
-      } else {
-        console.log('[LoginScreen] Login successful — navigation will auto-switch to MainTabs');
-        // No manual navigation needed — AuthContext sets token,
-        // which makes isAuthenticated=true, which swaps AuthStack→MainTabs
+        console.log('Login failed');
+        const msg = result.error || '';
+        const showInvalid = isInvalidCredentialsFailure(msg);
+
+        if (showInvalid) {
+          setError('Invalid credentials');
+          Toast.show({
+            type: 'error',
+            text1: 'Invalid credentials',
+            position: 'top',
+          });
+          triggerShake();
+        } else {
+          Toast.show({
+            type: 'error',
+            text1: msg || 'Something went wrong',
+            position: 'top',
+          });
+        }
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      console.log('[LoginScreen] Unexpected error during login:', err);
+
+      console.log('Login success');
+      Toast.show({
+        type: 'success',
+        text1: 'Welcome back 👋',
+        position: 'top',
+      });
       setLoading(false);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } catch (err) {
+      console.log('Login failed');
+      Toast.show({
+        type: 'error',
+        text1: 'Something went wrong. Please try again.',
+        position: 'top',
+      });
+      setLoading(false);
     }
   };
+
+  const inputGroupError = !!error;
+  const inputGroupDynamic = inputGroupError ? styles.inputGroupError : null;
 
   return (
     <KeyboardAvoidingView
@@ -45,7 +132,6 @@ const LoginScreen = ({ navigation }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* Logo / Brand */}
         <View style={styles.brand}>
           <View style={styles.logoWrap}>
             <Ionicons name="barbell" size={40} color={Colors.primary} />
@@ -54,65 +140,70 @@ const LoginScreen = ({ navigation }) => {
           <Text style={styles.tagline}>Manage your gym like a pro</Text>
         </View>
 
-        {/* Form */}
         <View style={styles.form}>
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>Sign in to your account</Text>
 
-          <View style={styles.inputGroup}>
-            <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email address"
-              placeholderTextColor={Colors.placeholder}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Ionicons name="lock-closed-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor={Colors.placeholder}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color={Colors.textMuted}
+          <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
+            <View style={[styles.inputGroup, inputGroupDynamic]}>
+              <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email address"
+                placeholderTextColor={Colors.placeholder}
+                value={email}
+                onChangeText={onEmailChange}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!loading}
               />
-            </TouchableOpacity>
-          </View>
+            </View>
+
+            <View style={[styles.inputGroup, inputGroupDynamic, styles.inputGroupLast]}>
+              <Ionicons name="lock-closed-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor={Colors.placeholder}
+                value={password}
+                onChangeText={onPasswordChange}
+                secureTextEntry={!showPassword}
+                editable={!loading}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={loading}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={Colors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
 
           <TouchableOpacity
             style={styles.forgotBtn}
             onPress={() => navigation.navigate('ResetPassword')}
+            disabled={loading}
           >
             <Text style={styles.forgotText}>Forgot Password?</Text>
           </TouchableOpacity>
+
+          {error ? (
+            <Text style={styles.inlineError}>{error}</Text>
+          ) : null}
 
           <TouchableOpacity
             style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
             onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.85}
           >
-            {loading ? (
-              <ActivityIndicator color={Colors.background} />
-            ) : (
-              <Text style={styles.loginBtnText}>Sign In</Text>
-            )}
+            <Text style={styles.loginBtnText}>{loading ? 'Logging in...' : 'Sign In'}</Text>
           </TouchableOpacity>
 
           <View style={styles.signupRow}>
             <Text style={styles.signupText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+            <TouchableOpacity onPress={() => navigation.navigate('Signup')} disabled={loading}>
               <Text style={styles.signupLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
@@ -121,6 +212,25 @@ const LoginScreen = ({ navigation }) => {
     </KeyboardAvoidingView>
   );
 };
+
+const inputErrorShadow = Platform.select({
+  ios: {
+    shadowColor: ERROR_COLOR,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  android: {
+    elevation: 6,
+    shadowColor: ERROR_COLOR,
+  },
+  default: {
+    shadowColor: ERROR_COLOR,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -187,6 +297,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.inputBorder,
     height: 52,
   },
+  inputGroupLast: {
+    marginBottom: 0,
+  },
+  inputGroupError: {
+    borderColor: ERROR_COLOR,
+    ...inputErrorShadow,
+  },
   inputIcon: {
     marginRight: 10,
   },
@@ -197,12 +314,20 @@ const styles = StyleSheet.create({
   },
   forgotBtn: {
     alignSelf: 'flex-end',
-    marginBottom: 20,
+    marginTop: 14,
+    marginBottom: 12,
   },
   forgotText: {
     fontSize: 13,
     color: Colors.primary,
     fontWeight: '500',
+  },
+  inlineError: {
+    color: ERROR_COLOR,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
   },
   loginBtn: {
     backgroundColor: Colors.primary,
@@ -213,7 +338,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   loginBtnDisabled: {
-    opacity: 0.7,
+    opacity: 0.65,
   },
   loginBtnText: {
     fontSize: 16,

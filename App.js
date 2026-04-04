@@ -3,9 +3,10 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, View, Text, Platform } from 'react-native';
+import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import Colors from './src/theme/colors';
@@ -92,9 +93,20 @@ const MembersStack = () => (
   </Stack.Navigator>
 );
 
+// Tab bar: same vertical rhythm as before when insets.bottom === 0;
+// add insets.bottom to height + paddingBottom so tabs sit above Android nav / iOS home indicator.
+const TAB_BAR_PADDING_TOP = 8;
+const TAB_BAR_PADDING_BOTTOM = 8;
+
 // ─── Bottom Tab Navigator ────────────────────────────
 const MainTabs = () => {
-  console.log('[MainTabs] Rendering bottom tab navigator...');
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom;
+  const paddingBottom = TAB_BAR_PADDING_BOTTOM + bottomInset;
+  const tabBarHeight = 65 + bottomInset;
+
+  console.log('[MainTabs] Rendering bottom tab navigator...', { bottomInset, tabBarHeight });
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -103,9 +115,9 @@ const MainTabs = () => {
           backgroundColor: Colors.tabBar,
           borderTopColor: Colors.border,
           borderTopWidth: 1,
-          height: 65,
-          paddingBottom: 8,
-          paddingTop: 8,
+          height: tabBarHeight,
+          paddingBottom,
+          paddingTop: TAB_BAR_PADDING_TOP,
         },
         tabBarActiveTintColor: Colors.tabActive,
         tabBarInactiveTintColor: Colors.tabInactive,
@@ -130,7 +142,11 @@ const MainTabs = () => {
         name="Scanner"
         component={QRScannerScreen}
         options={{
-          tabBarLabel: 'Scan',
+          // Per-tab label: React Navigation applies tabBarShowLabel from the *focused* tab to all items,
+          // so tabBarShowLabel: false here only worked on the Scanner tab. Use a custom label that
+          // returns null so this slot never shows the route name "Scanner".
+          tabBarLabel: () => null,
+          tabBarAccessibilityLabel: 'Scan QR code',
           tabBarIcon: ({ focused }) => (
             <View style={{
               width: 48, height: 48, borderRadius: 24,
@@ -210,6 +226,37 @@ const navTheme = {
 };
 
 // Web linking config — prevents "undefined" URL path on web
+const toastConfig = {
+  success: (props) => (
+    <BaseToast
+      {...props}
+      style={{
+        borderLeftColor: Colors.success,
+        backgroundColor: Colors.surface,
+        borderWidth: 1,
+        borderColor: Colors.border,
+      }}
+      contentContainerStyle={{ paddingHorizontal: 16 }}
+      text1Style={{ fontSize: 15, fontWeight: '600', color: Colors.text }}
+      text2Style={{ fontSize: 13, color: Colors.textSecondary }}
+    />
+  ),
+  error: (props) => (
+    <ErrorToast
+      {...props}
+      style={{
+        borderLeftColor: '#ff4d4f',
+        backgroundColor: Colors.surface,
+        borderWidth: 1,
+        borderColor: Colors.border,
+      }}
+      contentContainerStyle={{ paddingHorizontal: 16 }}
+      text1Style={{ fontSize: 15, fontWeight: '600', color: Colors.text }}
+      text2Style={{ fontSize: 13, color: Colors.textSecondary }}
+    />
+  ),
+};
+
 const linking = Platform.OS === 'web' ? {
   config: {
     screens: {
@@ -250,6 +297,13 @@ export default function App() {
           <RootNavigator />
         </NavigationContainer>
       </AuthProvider>
+      <Toast
+        config={toastConfig}
+        position="top"
+        topOffset={56}
+        visibilityTime={2800}
+        autoHide
+      />
     </SafeAreaProvider>
   );
 }

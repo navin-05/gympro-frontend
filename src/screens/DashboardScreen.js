@@ -91,9 +91,10 @@ const DashboardScreen = ({ navigation }) => {
         <TouchableOpacity
           style={styles.scanBtn}
           onPress={() => navigation.navigate('Scanner')}
+          accessibilityLabel="Scan QR code"
+          accessibilityRole="button"
         >
           <Ionicons name="qr-code" size={18} color={Colors.background} />
-          <Text style={styles.scanBtnText}>Scan</Text>
         </TouchableOpacity>
       </View>
 
@@ -139,10 +140,15 @@ const styles = StyleSheet.create({
   attendanceLabel: { fontSize: 13, color: Colors.textSecondary },
   attendanceValue: { fontSize: 24, fontWeight: '700', color: Colors.text },
   scanBtn: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary,
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, gap: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 92,
+    minHeight: 40,
   },
-  scanBtnText: { fontSize: 14, fontWeight: '600', color: Colors.background },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   actionCard: {
     backgroundColor: Colors.card, borderRadius: 14, padding: 16,
