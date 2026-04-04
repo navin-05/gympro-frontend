@@ -103,17 +103,17 @@ const MembersStack = () => (
   </Stack.Navigator>
 );
 
-// Tab bar: same vertical rhythm as before when insets.bottom === 0;
+// Tab bar: increase height so icon + label fit without clipping.
 // add insets.bottom to height + paddingBottom so tabs sit above Android nav / iOS home indicator.
 const TAB_BAR_PADDING_TOP = 8;
-const TAB_BAR_PADDING_BOTTOM = 8;
+const TAB_BAR_PADDING_BOTTOM = 12;
 
 // ─── Bottom Tab Navigator ────────────────────────────
 const MainTabs = () => {
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom;
   const paddingBottom = TAB_BAR_PADDING_BOTTOM + bottomInset;
-  const tabBarHeight = 65 + bottomInset;
+  const tabBarHeight = 80 + bottomInset;
 
   console.log('[MainTabs] Rendering bottom tab navigator...', { bottomInset, tabBarHeight });
 
@@ -131,7 +131,15 @@ const MainTabs = () => {
         },
         tabBarActiveTintColor: Colors.tabActive,
         tabBarInactiveTintColor: Colors.tabInactive,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+          marginBottom: 4,
+          lineHeight: 16,
+        },
+        tabBarIconStyle: {
+          marginTop: 4,
+        },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
           switch (route.name) {
