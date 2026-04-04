@@ -28,7 +28,8 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "backgroundColor": "#0A0E1A"
     },
     "plugins": [
       "expo-camera",

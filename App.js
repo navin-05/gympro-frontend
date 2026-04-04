@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -73,7 +73,12 @@ class ErrorBoundary extends React.Component {
 
 // ─── Home tab stack ──────────────────────────────────
 const HomeStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator
+    screenOptions={{
+      headerShown: false,
+      contentStyle: { backgroundColor: Colors.background },
+    }}
+  >
     <Stack.Screen name="DashboardHome" component={DashboardScreen} />
     <Stack.Screen name="Notifications" component={NotificationsScreen} />
     <Stack.Screen name="Transformations" component={TransformationScreen} />
@@ -84,7 +89,12 @@ const HomeStack = () => (
 
 // ─── Members tab stack ───────────────────────────────
 const MembersStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator
+    screenOptions={{
+      headerShown: false,
+      contentStyle: { backgroundColor: Colors.background },
+    }}
+  >
     <Stack.Screen name="MembersList" component={MembersListScreen} />
     <Stack.Screen name="AddMember" component={AddMemberScreen} />
     <Stack.Screen name="MemberProfile" component={MemberProfileScreen} />
@@ -167,7 +177,12 @@ const MainTabs = () => {
 
 // ─── Auth Stack ──────────────────────────────────────
 const AuthStack = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator
+    screenOptions={{
+      headerShown: false,
+      contentStyle: { backgroundColor: Colors.background },
+    }}
+  >
     <Stack.Screen name="Login" component={LoginScreen} />
     <Stack.Screen name="Signup" component={SignupScreen} />
     <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
@@ -192,7 +207,12 @@ const RootNavigator = () => {
   if (isAuthenticated && !isProfileComplete) {
     return (
       <ErrorBoundary>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: Colors.background },
+          }}
+        >
           <Stack.Screen name="GymProfileSetup" component={GymProfileSetupScreen} />
         </Stack.Navigator>
       </ErrorBoundary>
@@ -287,16 +307,38 @@ const linking = Platform.OS === 'web' ? {
   },
 } : undefined;
 
+function WebRootChrome() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const bg = Colors.background;
+    document.documentElement.style.backgroundColor = bg;
+    document.body.style.backgroundColor = bg;
+    const root = document.getElementById('root');
+    if (root) root.style.backgroundColor = bg;
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', bg);
+  }, []);
+  return null;
+}
+
 export default function App() {
   console.log('[App] Rendering...');
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <NavigationContainer theme={navTheme} linking={linking}>
-          <StatusBar style="light" />
-          <RootNavigator />
-        </NavigationContainer>
-      </AuthProvider>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: Colors.background }}>
+      <View style={{ flex: 1, backgroundColor: Colors.background }}>
+        <WebRootChrome />
+        <AuthProvider>
+          <NavigationContainer theme={navTheme} linking={linking}>
+            <StatusBar style="light" />
+            <RootNavigator />
+          </NavigationContainer>
+        </AuthProvider>
+      </View>
       <Toast
         config={toastConfig}
         position="top"
