@@ -174,7 +174,7 @@ const GymProfileScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, paddingTop: 60 },
+  content: { padding: 20, paddingTop: 20 },
   title: { fontSize: 26, fontWeight: '700', color: Colors.text, marginBottom: 4 },
   subtitle: { fontSize: 14, color: Colors.textSecondary, marginBottom: 24 },
   logoWrap: { alignSelf: 'center', marginBottom: 24 },

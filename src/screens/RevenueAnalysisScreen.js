@@ -474,7 +474,7 @@ const RevenueAnalysisScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, paddingTop: 60 },
+  content: { padding: 20, paddingTop: 20 },
 
   // Header
   header: {

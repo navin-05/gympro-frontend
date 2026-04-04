@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
   },
   title: { fontSize: 26, fontWeight: '700', color: Colors.text },
   subtitle: { fontSize: 14, color: Colors.textSecondary, marginTop: 2 },

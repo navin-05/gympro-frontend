@@ -4,14 +4,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 
 const DashboardScreen = ({ navigation }) => {
-  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [stats, setStats] = useState({
     totalMembers: 0, activeMembers: 0, expiringSoon: 0,
@@ -43,18 +41,13 @@ const DashboardScreen = ({ navigation }) => {
     { icon: 'images', label: 'Transforms', navigate: () => navigation.navigate('Transformations'), color: Colors.info },
   ];
 
-  // Top inset only here (not SafeAreaView 'top') to avoid double spacing with stack/tab layout.
-  // Horizontal + bottom safe area via SafeAreaView; flexGrow keeps scroll content full height on web.
-  const topPad = insets.top + 12;
-
   return (
-    <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[styles.content, { flexGrow: 1, paddingTop: topPad }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-        keyboardShouldPersistTaps="handled"
-      >
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -123,21 +116,17 @@ const DashboardScreen = ({ navigation }) => {
         ))}
       </View>
     </ScrollView>
-    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
   content: {
     paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 20,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 },

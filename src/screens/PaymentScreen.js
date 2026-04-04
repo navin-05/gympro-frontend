@@ -154,7 +154,7 @@ const PaymentScreen = ({ route, navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, paddingTop: 60 },
+  content: { padding: 20, paddingTop: 20 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   backBtn: {
     width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.card,

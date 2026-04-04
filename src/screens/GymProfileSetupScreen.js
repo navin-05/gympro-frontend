@@ -195,7 +195,7 @@ const GymProfileSetupScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+  content: { padding: 24, paddingTop: 20, paddingBottom: 40 },
 
   header: { alignItems: 'center', marginBottom: 24 },
   headerIconWrap: {

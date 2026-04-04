@@ -557,7 +557,7 @@ const AddMemberScreen = ({ navigation }) => {
 // ═══════════════════════════════════════════════════════
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 40 },
+  content: { padding: 20, paddingTop: 20, paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
   backBtn: {
     width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.card,

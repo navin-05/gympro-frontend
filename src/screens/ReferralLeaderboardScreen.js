@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 20, paddingTop: 60,
+    paddingHorizontal: 20, paddingTop: 20,
   },
   title: { fontSize: 24, fontWeight: '700', color: Colors.text },
   subtitle: { fontSize: 14, color: Colors.textSecondary, paddingHorizontal: 20, marginTop: 4, marginBottom: 20 },
