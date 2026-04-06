@@ -8,7 +8,6 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 
-// ─── Helper ──────────────────────────────────────────
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleDateString('en-IN', {
@@ -26,32 +25,19 @@ const getStatusInfo = (member) => {
   return { label: 'Active', color: Colors.active, bg: Colors.activeBg };
 };
 
-// ─── Swipeable Member Row ────────────────────────────
 const SwipeableMemberRow = ({ member, onPress, onDelete }) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const isSwiped = useRef(false);
-
-  const onSwipeStart = () => {};
 
   const resetSwipe = () => {
     Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
     isSwiped.current = false;
   };
 
-  const handleSwipeRight = () => {
-    if (!isSwiped.current) {
-      Animated.spring(translateX, { toValue: 80, useNativeDriver: true }).start();
-      isSwiped.current = true;
-    } else {
-      resetSwipe();
-    }
-  };
-
   const status = getStatusInfo(member);
 
   return (
     <View style={rowStyles.wrapper}>
-      {/* Delete background (revealed on swipe) */}
       <View style={rowStyles.deleteBackground}>
         <TouchableOpacity
           style={rowStyles.deleteBtn}
@@ -65,7 +51,6 @@ const SwipeableMemberRow = ({ member, onPress, onDelete }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Foreground card */}
       <Animated.View style={[rowStyles.card, { transform: [{ translateX }] }]}>
         <TouchableOpacity
           activeOpacity={0.8}
@@ -82,7 +67,6 @@ const SwipeableMemberRow = ({ member, onPress, onDelete }) => {
           }}
           style={rowStyles.cardInner}
         >
-          {/* Avatar */}
           <View style={rowStyles.avatarWrap}>
             {member.photo ? (
               <Image source={{ uri: member.photo }} style={rowStyles.avatar} />
@@ -95,7 +79,6 @@ const SwipeableMemberRow = ({ member, onPress, onDelete }) => {
             )}
           </View>
 
-          {/* Info */}
           <View style={rowStyles.info}>
             <Text style={rowStyles.name} numberOfLines={1}>{member.name}</Text>
             <Text style={rowStyles.meta} numberOfLines={1}>
@@ -111,15 +94,13 @@ const SwipeableMemberRow = ({ member, onPress, onDelete }) => {
             </View>
           </View>
 
-          {/* Right section */}
           <View style={rowStyles.right}>
             <View style={[rowStyles.statusBadge, { backgroundColor: status.bg }]}>
               <Text style={[rowStyles.statusText, { color: status.color }]}>{status.label}</Text>
             </View>
-            {member.dueAmount > 0 && (
+            {member.dueAmount > 0 ? (
               <Text style={rowStyles.dueText}>₹{member.dueAmount} due</Text>
-            )}
-            {member.dueAmount <= 0 && (
+            ) : (
               <Text style={rowStyles.paidText}>Paid ✓</Text>
             )}
           </View>
@@ -180,162 +161,112 @@ const rowStyles = StyleSheet.create({
   paidText: { fontSize: 11, color: Colors.active, fontWeight: '600', marginTop: 6 },
 });
 
-// ═══════════════════════════════════════════════════════
-// ─── Main MembersListScreen ──────────────────────────
-// ═══════════════════════════════════════════════════════
 const MembersListScreen = ({ navigation, route }) => {
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true); // first load only
-  const [isRefreshing, setIsRefreshing] = useState(false); // lightweight refresh state
+  const [allMembers, setAllMembers] = useState([]);
+  const [filteredMembers, setFilteredMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [loadingFilter, setLoadingFilter] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [sortBy, setSortBy] = useState(null);
-  const searchDebounceRef = useRef(null);
-  const filterDebounceRef = useRef(null);
-  const latestRequestRef = useRef(0);
-  const hasLoadedOnceRef = useRef(false);
-  const requestControllerRef = useRef(null);
+  const hasFetchedRef = useRef(false);
+  const filterDelayRef = useRef(null);
   const listOpacity = useRef(new Animated.Value(1)).current;
-  const isFadedRef = useRef(false);
 
-  const applyOptimisticFilter = useCallback((data, searchQuery = '', status = 'all') => {
+  const applyFilter = useCallback((searchText, filterKey, source) => {
     const now = new Date();
-    const sevenDaysFromNow = new Date();
+    const sevenDaysFromNow = new Date(now);
     sevenDaysFromNow.setDate(now.getDate() + 7);
-    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const normalizedSearch = String(searchText || '').trim().toLowerCase();
 
-    return data.filter((member) => {
-      const matchesSearch = !normalizedSearch ||
-        member.name?.toLowerCase().includes(normalizedSearch) ||
-        member.mobile?.toLowerCase().includes(normalizedSearch);
-
+    return source.filter((member) => {
+      const name = member.name?.toLowerCase() || '';
+      const mobile = member.mobile?.toLowerCase() || '';
+      const matchesSearch = !normalizedSearch || name.includes(normalizedSearch) || mobile.includes(normalizedSearch);
       if (!matchesSearch) return false;
 
       const expiryDate = member.expiryDate ? new Date(member.expiryDate) : null;
       const dueAmount = Number(member.dueAmount || 0);
 
-      if (status === 'dues') return dueAmount > 0;
-      if (!expiryDate || status === 'all') return true;
-      if (status === 'active') return expiryDate > sevenDaysFromNow;
-      if (status === 'expiring') return expiryDate >= now && expiryDate <= sevenDaysFromNow;
-      if (status === 'expired') return expiryDate < now;
+      if (filterKey === 'dues') return dueAmount > 0;
+      if (!expiryDate || filterKey === 'all') return true;
+      if (filterKey === 'active') return expiryDate > sevenDaysFromNow;
+      if (filterKey === 'expiring') return expiryDate >= now && expiryDate <= sevenDaysFromNow;
+      if (filterKey === 'expired') return expiryDate < now;
       return true;
     });
   }, []);
 
-  const fetchMembers = useCallback(async (searchQuery = '', status = '', options = {}) => {
-    const {
-      showInitialLoader = false,
-      showLightweightLoader = false,
-      trackFilterLoading = false,
-    } = options;
-    const requestId = ++latestRequestRef.current;
-
-    if (showInitialLoader && !hasLoadedOnceRef.current) {
-      setLoading(true);
-    } else if (showLightweightLoader) {
-      setIsRefreshing(true);
-    }
-
-    if (requestControllerRef.current) {
-      requestControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    requestControllerRef.current = controller;
-
+  const fetchMembersOnce = useCallback(async (initialFilter) => {
     try {
-      const params = { page: 1, limit: 50 };
-      if (searchQuery) params.search = searchQuery;
-      if (status && status !== 'all') {
-        if (status === 'dues') params.hasDues = 'true';
-        else params.status = status;
-      }
-
-      const res = await apiClient.get('/members', {
-        params,
-        signal: controller.signal,
-      });
-
-      // Ignore stale responses from slower previous requests.
-      if (requestId !== latestRequestRef.current) return;
-      setMembers(res.data || []);
-      hasLoadedOnceRef.current = true;
-
-      if (isFadedRef.current) {
-        Animated.timing(listOpacity, {
-          toValue: 1,
-          duration: 240,
-          useNativeDriver: true,
-        }).start(() => {
-          isFadedRef.current = false;
-        });
-      }
+      const res = await apiClient.get('/members');
+      const members = res.data || [];
+      setAllMembers(members);
+      setFilteredMembers(applyFilter('', initialFilter, members));
+      hasFetchedRef.current = true;
     } catch (err) {
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
-        return;
-      }
-      if (requestId === latestRequestRef.current) {
-        console.log('[MembersList] Error:', err.message);
-      }
+      console.log('[MembersList] Error:', err.message);
     } finally {
-      if (requestId === latestRequestRef.current) {
-        setLoading(false);
-        setIsRefreshing(false);
-        if (trackFilterLoading) {
-          setLoadingFilter(false);
-        }
-      }
+      setLoading(false);
+      setLoadingFilter(false);
     }
-  }, []);
+  }, [applyFilter]);
 
   useFocusEffect(useCallback(() => {
     const filterParam = route.params?.filter || 'all';
     setActiveFilter(filterParam);
-    fetchMembers(search, filterParam, { showInitialLoader: true });
-  }, [route.params?.filter, fetchMembers, search]));
+    if (!hasFetchedRef.current) {
+      setLoading(true);
+      fetchMembersOnce(filterParam);
+    }
+  }, [route.params?.filter, fetchMembersOnce]));
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    if (loading || allMembers.length === 0) return;
+    if (filterDelayRef.current) clearTimeout(filterDelayRef.current);
+
+    setLoadingFilter(true);
+    Animated.timing(listOpacity, {
+      toValue: 0.6,
+      duration: 100,
+      useNativeDriver: true,
+    }).start();
+
+    filterDelayRef.current = setTimeout(() => {
+      setFilteredMembers(applyFilter(debouncedSearch, activeFilter, allMembers));
+      Animated.timing(listOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => setLoadingFilter(false));
+    }, 150);
+
+    return () => {
+      if (filterDelayRef.current) clearTimeout(filterDelayRef.current);
+    };
+  }, [debouncedSearch, activeFilter, allMembers, applyFilter, loading, listOpacity]);
 
   useEffect(() => () => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current);
-    if (requestControllerRef.current) requestControllerRef.current.abort();
+    if (filterDelayRef.current) clearTimeout(filterDelayRef.current);
   }, []);
 
   const onSearch = (text) => {
     setSearch(text);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => {
-      // Optimistic client-side filter before API sync.
-      setMembers((prev) => applyOptimisticFilter(prev, text, activeFilter));
-      fetchMembers(text, activeFilter, { showLightweightLoader: true });
-    }, 300);
   };
 
   const onFilter = (filter) => {
     setActiveFilter(filter);
-    setIsRefreshing(true);
-    setLoadingFilter(true);
-
-    if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current);
-    Animated.timing(listOpacity, {
-      toValue: 0.55,
-      duration: 100,
-      useNativeDriver: true,
-    }).start(() => {
-      isFadedRef.current = true;
-    });
-
-    filterDebounceRef.current = setTimeout(() => {
-      // Delayed switch + optimistic preview for instant perceived response.
-      setMembers((prev) => applyOptimisticFilter(prev, search, filter));
-      fetchMembers(search, filter, {
-        showLightweightLoader: true,
-        trackFilterLoading: true,
-      });
-    }, 150);
   };
 
-  const handleDelete = useCallback(async (member) => {
+  const handleDelete = useCallback((member) => {
     Alert.alert(
       'Delete Member',
       `Are you sure you want to remove ${member.name}?`,
@@ -347,7 +278,9 @@ const MembersListScreen = ({ navigation, route }) => {
           onPress: async () => {
             try {
               await apiClient.delete(`/members/${member._id}`);
-              setMembers(prev => prev.filter(m => m._id !== member._id));
+              const nextAllMembers = allMembers.filter((m) => m._id !== member._id);
+              setAllMembers(nextAllMembers);
+              setFilteredMembers(applyFilter(debouncedSearch, activeFilter, nextAllMembers));
             } catch (err) {
               Alert.alert('Error', err.response?.data?.error || 'Failed to delete');
             }
@@ -355,12 +288,11 @@ const MembersListScreen = ({ navigation, route }) => {
         },
       ]
     );
-  }, []);
+  }, [allMembers, applyFilter, debouncedSearch, activeFilter]);
 
-  // ─── Sort logic ────────────────────────────────────
   const sortedMembers = React.useMemo(() => {
-    if (!sortBy) return members;
-    const sorted = [...members];
+    if (!sortBy) return filteredMembers;
+    const sorted = [...filteredMembers];
     sorted.sort((a, b) => {
       switch (sortBy) {
         case 'expiry_asc':
@@ -376,7 +308,7 @@ const MembersListScreen = ({ navigation, route }) => {
       }
     });
     return sorted;
-  }, [members, sortBy]);
+  }, [filteredMembers, sortBy]);
 
   const renderItem = useCallback(({ item }) => (
     <MemoizedMemberRow
@@ -408,7 +340,6 @@ const MembersListScreen = ({ navigation, route }) => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Members</Text>
@@ -416,7 +347,6 @@ const MembersListScreen = ({ navigation, route }) => {
         </View>
       </View>
 
-      {/* Search */}
       <View style={styles.searchWrap}>
         <Ionicons name="search-outline" size={20} color={Colors.textMuted} />
         <TextInput
@@ -433,7 +363,6 @@ const MembersListScreen = ({ navigation, route }) => {
         ) : null}
       </View>
 
-      {/* Filters */}
       <View style={styles.filters}>
         {filters.map((f) => (
           <TouchableOpacity
@@ -454,7 +383,6 @@ const MembersListScreen = ({ navigation, route }) => {
         ))}
       </View>
 
-      {/* Sort Row */}
       <View style={styles.sortRow}>
         <Text style={styles.sortLabel}>Sort by:</Text>
         <TouchableOpacity style={styles.sortBtn} onPress={() => toggleSort('expiry')}>
@@ -472,7 +400,6 @@ const MembersListScreen = ({ navigation, route }) => {
         )}
       </View>
 
-      {/* Member List */}
       {loading ? (
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
       ) : (
@@ -483,8 +410,8 @@ const MembersListScreen = ({ navigation, route }) => {
             renderItem={renderItem}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
-            initialNumToRender={12}
-            windowSize={7}
+            initialNumToRender={10}
+            windowSize={5}
             removeClippedSubviews={true}
             ListEmptyComponent={
               <View style={styles.empty}>
@@ -514,7 +441,6 @@ const MembersListScreen = ({ navigation, route }) => {
         </View>
       )}
 
-      {/* ─── FAB (Floating Action Button) ────────────── */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('AddMember')}
