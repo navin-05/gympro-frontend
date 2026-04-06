@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   FlatList, ActivityIndicator, Alert, Animated, Image,
@@ -129,6 +129,20 @@ const SwipeableMemberRow = ({ member, onPress, onDelete }) => {
   );
 };
 
+const MemoizedMemberRow = React.memo(
+  SwipeableMemberRow,
+  (prevProps, nextProps) => (
+    prevProps.member._id === nextProps.member._id &&
+    prevProps.member.name === nextProps.member.name &&
+    prevProps.member.mobile === nextProps.member.mobile &&
+    prevProps.member.photo === nextProps.member.photo &&
+    prevProps.member.planName === nextProps.member.planName &&
+    prevProps.member.startDate === nextProps.member.startDate &&
+    prevProps.member.expiryDate === nextProps.member.expiryDate &&
+    prevProps.member.dueAmount === nextProps.member.dueAmount
+  )
+);
+
 const rowStyles = StyleSheet.create({
   wrapper: { marginBottom: 10, position: 'relative' },
   deleteBackground: {
@@ -171,46 +185,157 @@ const rowStyles = StyleSheet.create({
 // ═══════════════════════════════════════════════════════
 const MembersListScreen = ({ navigation, route }) => {
   const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // first load only
+  const [isRefreshing, setIsRefreshing] = useState(false); // lightweight refresh state
+  const [loadingFilter, setLoadingFilter] = useState(false);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [sortBy, setSortBy] = useState(null);
+  const searchDebounceRef = useRef(null);
+  const filterDebounceRef = useRef(null);
+  const latestRequestRef = useRef(0);
+  const hasLoadedOnceRef = useRef(false);
+  const requestControllerRef = useRef(null);
+  const listOpacity = useRef(new Animated.Value(1)).current;
+  const isFadedRef = useRef(false);
 
-  useFocusEffect(useCallback(() => {
-    const filterParam = route.params?.filter || 'all';
-    console.log('[MembersList] Screen focused — filter:', filterParam);
-    setActiveFilter(filterParam);
-    fetchMembers('', filterParam);
-  }, [route.params?.filter]));
+  const applyOptimisticFilter = useCallback((data, searchQuery = '', status = 'all') => {
+    const now = new Date();
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(now.getDate() + 7);
+    const normalizedSearch = searchQuery.trim().toLowerCase();
 
-  const fetchMembers = async (searchQuery = '', status = '') => {
+    return data.filter((member) => {
+      const matchesSearch = !normalizedSearch ||
+        member.name?.toLowerCase().includes(normalizedSearch) ||
+        member.mobile?.toLowerCase().includes(normalizedSearch);
+
+      if (!matchesSearch) return false;
+
+      const expiryDate = member.expiryDate ? new Date(member.expiryDate) : null;
+      const dueAmount = Number(member.dueAmount || 0);
+
+      if (status === 'dues') return dueAmount > 0;
+      if (!expiryDate || status === 'all') return true;
+      if (status === 'active') return expiryDate > sevenDaysFromNow;
+      if (status === 'expiring') return expiryDate >= now && expiryDate <= sevenDaysFromNow;
+      if (status === 'expired') return expiryDate < now;
+      return true;
+    });
+  }, []);
+
+  const fetchMembers = useCallback(async (searchQuery = '', status = '', options = {}) => {
+    const {
+      showInitialLoader = false,
+      showLightweightLoader = false,
+      trackFilterLoading = false,
+    } = options;
+    const requestId = ++latestRequestRef.current;
+
+    if (showInitialLoader && !hasLoadedOnceRef.current) {
+      setLoading(true);
+    } else if (showLightweightLoader) {
+      setIsRefreshing(true);
+    }
+
+    if (requestControllerRef.current) {
+      requestControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+
     try {
-      const params = {};
+      const params = { page: 1, limit: 50 };
       if (searchQuery) params.search = searchQuery;
       if (status && status !== 'all') {
         if (status === 'dues') params.hasDues = 'true';
         else params.status = status;
       }
-      const res = await apiClient.get('/members', { params });
-      console.log('[MembersList] Fetched members:', res.data?.length || 0);
+
+      const res = await apiClient.get('/members', {
+        params,
+        signal: controller.signal,
+      });
+
+      // Ignore stale responses from slower previous requests.
+      if (requestId !== latestRequestRef.current) return;
       setMembers(res.data || []);
+      hasLoadedOnceRef.current = true;
+
+      if (isFadedRef.current) {
+        Animated.timing(listOpacity, {
+          toValue: 1,
+          duration: 240,
+          useNativeDriver: true,
+        }).start(() => {
+          isFadedRef.current = false;
+        });
+      }
     } catch (err) {
-      console.log('[MembersList] Error:', err.message);
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
+        return;
+      }
+      if (requestId === latestRequestRef.current) {
+        console.log('[MembersList] Error:', err.message);
+      }
+    } finally {
+      if (requestId === latestRequestRef.current) {
+        setLoading(false);
+        setIsRefreshing(false);
+        if (trackFilterLoading) {
+          setLoadingFilter(false);
+        }
+      }
     }
-    setLoading(false);
-  };
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    const filterParam = route.params?.filter || 'all';
+    setActiveFilter(filterParam);
+    fetchMembers(search, filterParam, { showInitialLoader: true });
+  }, [route.params?.filter, fetchMembers, search]));
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current);
+    if (requestControllerRef.current) requestControllerRef.current.abort();
+  }, []);
 
   const onSearch = (text) => {
     setSearch(text);
-    fetchMembers(text, activeFilter);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      // Optimistic client-side filter before API sync.
+      setMembers((prev) => applyOptimisticFilter(prev, text, activeFilter));
+      fetchMembers(text, activeFilter, { showLightweightLoader: true });
+    }, 300);
   };
 
   const onFilter = (filter) => {
     setActiveFilter(filter);
-    fetchMembers(search, filter);
+    setIsRefreshing(true);
+    setLoadingFilter(true);
+
+    if (filterDebounceRef.current) clearTimeout(filterDebounceRef.current);
+    Animated.timing(listOpacity, {
+      toValue: 0.55,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(() => {
+      isFadedRef.current = true;
+    });
+
+    filterDebounceRef.current = setTimeout(() => {
+      // Delayed switch + optimistic preview for instant perceived response.
+      setMembers((prev) => applyOptimisticFilter(prev, search, filter));
+      fetchMembers(search, filter, {
+        showLightweightLoader: true,
+        trackFilterLoading: true,
+      });
+    }, 150);
   };
 
-  const handleDelete = async (member) => {
+  const handleDelete = useCallback(async (member) => {
     Alert.alert(
       'Delete Member',
       `Are you sure you want to remove ${member.name}?`,
@@ -222,7 +347,6 @@ const MembersListScreen = ({ navigation, route }) => {
           onPress: async () => {
             try {
               await apiClient.delete(`/members/${member._id}`);
-              console.log('[MembersList] Deleted member:', member.name);
               setMembers(prev => prev.filter(m => m._id !== member._id));
             } catch (err) {
               Alert.alert('Error', err.response?.data?.error || 'Failed to delete');
@@ -231,7 +355,7 @@ const MembersListScreen = ({ navigation, route }) => {
         },
       ]
     );
-  };
+  }, []);
 
   // ─── Sort logic ────────────────────────────────────
   const sortedMembers = React.useMemo(() => {
@@ -253,6 +377,14 @@ const MembersListScreen = ({ navigation, route }) => {
     });
     return sorted;
   }, [members, sortBy]);
+
+  const renderItem = useCallback(({ item }) => (
+    <MemoizedMemberRow
+      member={item}
+      onPress={() => navigation.navigate('MemberProfile', { memberId: item._id })}
+      onDelete={handleDelete}
+    />
+  ), [navigation, handleDelete]);
 
   const toggleSort = (field) => {
     if (sortBy === `${field}_asc`) setSortBy(`${field}_desc`);
@@ -344,37 +476,42 @@ const MembersListScreen = ({ navigation, route }) => {
       {loading ? (
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
       ) : (
-        <FlatList
-          data={sortedMembers}
-          keyExtractor={(item) => item._id}
-          renderItem={({ item }) => (
-            <SwipeableMemberRow
-              member={item}
-              onPress={() => navigation.navigate('MemberProfile', { memberId: item._id })}
-              onDelete={() => handleDelete(item)}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name="people-outline" size={56} color={Colors.textMuted} />
-              <Text style={styles.emptyText}>No members found</Text>
-              <Text style={styles.emptyHint}>
-                {search ? 'Try a different search' : 'Add your first gym member'}
-              </Text>
-              {!search && (
-                <TouchableOpacity
-                  style={styles.emptyBtn}
-                  onPress={() => navigation.navigate('AddMember')}
-                >
-                  <Ionicons name="person-add" size={16} color={Colors.background} />
-                  <Text style={styles.emptyBtnText}>Add First Member</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          }
-        />
+        <Animated.View style={{ flex: 1, opacity: loadingFilter ? 0.6 : listOpacity }}>
+          <FlatList
+            data={sortedMembers}
+            keyExtractor={(item) => item._id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={12}
+            windowSize={7}
+            removeClippedSubviews={true}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <Ionicons name="people-outline" size={56} color={Colors.textMuted} />
+                <Text style={styles.emptyText}>No members found</Text>
+                <Text style={styles.emptyHint}>
+                  {search ? 'Try a different search' : 'Add your first gym member'}
+                </Text>
+                {!search && (
+                  <TouchableOpacity
+                    style={styles.emptyBtn}
+                    onPress={() => navigation.navigate('AddMember')}
+                  >
+                    <Ionicons name="person-add" size={16} color={Colors.background} />
+                    <Text style={styles.emptyBtnText}>Add First Member</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            }
+          />
+        </Animated.View>
+      )}
+
+      {loadingFilter && !loading && (
+        <View style={styles.filterLoaderOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
       )}
 
       {/* ─── FAB (Floating Action Button) ────────────── */}
@@ -447,6 +584,15 @@ const styles = StyleSheet.create({
     elevation: 8,
     shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 8,
+  },
+  filterLoaderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
