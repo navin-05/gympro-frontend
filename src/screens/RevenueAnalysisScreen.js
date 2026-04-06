@@ -48,8 +48,10 @@ const RevenueAnalysisScreen = ({ navigation }) => {
     try {
       const [dashRes, membersRes] = await Promise.all([
         apiClient.get('/dashboard'),
-        apiClient.get('/members'),
+        apiClient.get('/members', { params: { mode: 'analytics' } }),
       ]);
+      console.log('[Revenue] Dashboard payload:', dashRes.data);
+      console.log('[Revenue] Members rows:', membersRes.data?.length || 0);
       setStats(dashRes.data || {});
       setMembers(membersRes.data || []);
     } catch (err) {
@@ -69,7 +71,7 @@ const RevenueAnalysisScreen = ({ navigation }) => {
   // ═════════════════════════════════════════════════════
 
   // Totals
-  const totalCollected = members.reduce((s, m) => s + (m.paidAmount || 0), 0);
+  const totalCollected = Number(stats?.revenueThisMonth || 0);
   const totalPending = members.reduce((s, m) => s + (m.dueAmount || 0), 0);
   const totalRevenue = totalCollected + totalPending;
   const paidMembers = members.filter(m => (m.dueAmount || 0) === 0).length;
