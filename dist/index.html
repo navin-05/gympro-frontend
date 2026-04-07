@@ -5,52 +5,34 @@
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>GymPro</title>
-
-    <!-- OneSignal SDK -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-
-    <script>
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(async function (OneSignal) {
-        await OneSignal.init({
-          appId: "2e37807f-26c5-4400-957c-69b1dd8a2590",
-        });
-
-        // 🔥 force popup
-        OneSignal.showSlidedownPrompt();
-
-        // 🔥 get user id
-        const id = await OneSignal.User.getOnesignalId();
-        console.log("USER ID:", id);
-      });
-    </script>
-
-    <!-- Expo reset styles -->
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
+      /* These styles make the body full-height */
       html,
       body {
         height: 100%;
       }
+      /* These styles disable body scrolling if you are using <ScrollView> */
       body {
         overflow: hidden;
       }
+      /* These styles make the root element full-height */
       #root {
         display: flex;
         height: 100%;
         flex: 1;
       }
     </style>
-
-    <link rel="icon" href="/favicon.ico" />
-  </head>
+    
+  <link rel="icon" href="/favicon.ico" /></head>
 
   <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
     <noscript>
       You need to enable JavaScript to run this app.
     </noscript>
-
+    <!-- The root element for your Expo app. -->
     <div id="root"></div>
-
-    <script src="/_expo/static/js/web/index-44d7ea1eae84e17b3e9440fc426fd419.js" defer></script>
-  </body>
+  <script src="/_expo/static/js/web/index-44d7ea1eae84e17b3e9440fc426fd419.js" defer></script>
+</body>
 </html>
