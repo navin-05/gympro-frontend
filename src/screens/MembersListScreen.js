@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  FlatList, ActivityIndicator, Alert, Animated, Image,
+  FlatList, ActivityIndicator, Alert, Animated, Image, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
@@ -165,6 +165,7 @@ const rowStyles = StyleSheet.create({
 const MembersListScreen = ({ navigation, route }) => {
   const queryClient = useQueryClient();
   const [loadingFilter] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -203,6 +204,21 @@ const MembersListScreen = ({ navigation, route }) => {
   const membersQuery = useCachedQuery('members', fetchMembers, { staleMs: 30_000 });
 
   const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
+
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      console.log('🔄 Pull-to-refresh triggered');
+      const res = await apiClient.get('/members');
+      const next = res.data || [];
+      queryClient.setQueryData(['members'], next);
+      queryClient.invalidateQueries({ queryKey: ['members'], refetchType: 'none' });
+    } catch (err) {
+      console.log('Refresh error:', err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     const filterParam = route.params?.filter || 'all';
@@ -377,6 +393,14 @@ const MembersListScreen = ({ navigation, route }) => {
             initialNumToRender={10}
             windowSize={5}
             removeClippedSubviews={true}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[Colors.primary]}
+                tintColor={Colors.primary}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Ionicons name="people-outline" size={56} color={Colors.textMuted} />
