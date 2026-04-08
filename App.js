@@ -5,11 +5,25 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View, Text, Platform } from 'react-native';
+import { ActivityIndicator, View, Text, Platform, AppState } from 'react-native';
 import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import Colors from './src/theme/colors';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnMount: false,
+      refetchOnReconnect: true,
+      refetchOnWindowFocus: true,
+      retry: 1,
+    },
+  },
+});
 
 // Auth Screens
 import LoginScreen from './src/screens/auth/LoginScreen';
@@ -336,16 +350,26 @@ function WebRootChrome() {
 
 export default function App() {
   console.log('[App] Rendering...');
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (status) => {
+      focusManager.setFocused(status === 'active');
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: Colors.background }}>
       <View style={{ flex: 1, backgroundColor: Colors.background }}>
         <WebRootChrome />
-        <AuthProvider>
-          <NavigationContainer theme={navTheme} linking={linking}>
-            <StatusBar style="light" />
-            <RootNavigator />
-          </NavigationContainer>
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <NavigationContainer theme={navTheme} linking={linking}>
+              <StatusBar style="light" />
+              <RootNavigator />
+            </NavigationContainer>
+          </AuthProvider>
+        </QueryClientProvider>
       </View>
       <Toast
         config={toastConfig}

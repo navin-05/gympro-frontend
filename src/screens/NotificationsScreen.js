@@ -3,52 +3,50 @@ import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 const NotificationsScreen = () => {
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const queryClient = useQueryClient();
 
-  useFocusEffect(useCallback(() => { fetchNotifications(); }, []));
+  const fetchNotifications = useCallback(async () => {
+    const res = await apiClient.get('/notifications');
+    return res.data || [];
+  }, []);
 
-  const fetchNotifications = async () => {
-    try {
-      const res = await apiClient.get('/notifications');
-      setNotifications(res.data);
-    } catch (err) {
-      console.log('Notifications error:', err.message);
-    }
-    setLoading(false);
-  };
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: fetchNotifications,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+  });
 
-  const generateNotifications = async () => {
-    setGenerating(true);
-    try {
-      const res = await apiClient.post('/notifications/generate');
-      await fetchNotifications();
-    } catch (err) {
-      console.log('Generate error:', err.message);
-    }
-    setGenerating(false);
-  };
+  const generateMutation = useMutation({
+    mutationFn: () => apiClient.post('/notifications/generate'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'], refetchType: 'none' });
+    },
+    onError: (err) => {
+      console.log('Generate error:', err?.message);
+    },
+  });
 
-  const markRead = async (id) => {
-    try {
-      await apiClient.put(`/notifications/${id}/read`);
-      setNotifications(prev =>
-        prev.map(n => n._id === id ? { ...n, read: true } : n)
-      );
-    } catch (err) {}
-  };
+  const markReadMutation = useMutation({
+    mutationFn: (id) => apiClient.put(`/notifications/${id}/read`),
+    onSuccess: (_, id) => {
+      queryClient.setQueryData(['notifications'], (prev) => {
+        const arr = Array.isArray(prev) ? prev : [];
+        return arr.map((n) => (n._id === id ? { ...n, read: true } : n));
+      });
+    },
+  });
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchNotifications();
+    await notificationsQuery.refetch();
     setRefreshing(false);
   };
 
@@ -67,7 +65,7 @@ const NotificationsScreen = () => {
     return (
       <TouchableOpacity
         style={[styles.card, !item.read && styles.cardUnread]}
-        onPress={() => markRead(item._id)}
+        onPress={() => markReadMutation.mutate(item._id)}
         activeOpacity={0.7}
       >
         <View style={[styles.iconWrap, { backgroundColor: icon.color + '18' }]}>
@@ -86,7 +84,9 @@ const NotificationsScreen = () => {
     );
   };
 
-  if (loading) {
+  const notifications = Array.isArray(notificationsQuery.data) ? notificationsQuery.data : [];
+
+  if (notificationsQuery.isLoading && notifications.length === 0) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -102,11 +102,11 @@ const NotificationsScreen = () => {
           <Text style={styles.subtitle}>{notifications.length} notification(s)</Text>
         </View>
         <TouchableOpacity
-          style={[styles.genBtn, generating && { opacity: 0.7 }]}
-          onPress={generateNotifications}
-          disabled={generating}
+          style={[styles.genBtn, generateMutation.isPending && { opacity: 0.7 }]}
+          onPress={() => generateMutation.mutate()}
+          disabled={generateMutation.isPending}
         >
-          {generating ? (
+          {generateMutation.isPending ? (
             <ActivityIndicator color={Colors.background} size="small" />
           ) : (
             <>

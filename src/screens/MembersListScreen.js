@@ -1,12 +1,12 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   FlatList, ActivityIndicator, Alert, Animated, Image,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
@@ -162,16 +162,12 @@ const rowStyles = StyleSheet.create({
 });
 
 const MembersListScreen = ({ navigation, route }) => {
-  const [allMembers, setAllMembers] = useState([]);
-  const [filteredMembers, setFilteredMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingFilter, setLoadingFilter] = useState(false);
+  const queryClient = useQueryClient();
+  const [loadingFilter] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [sortBy, setSortBy] = useState(null);
-  const hasFetchedRef = useRef(false);
-  const filterDelayRef = useRef(null);
   const listOpacity = useRef(new Animated.Value(1)).current;
 
   const applyFilter = useCallback((searchText, filterKey, source) => {
@@ -198,29 +194,24 @@ const MembersListScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const fetchMembersOnce = useCallback(async (initialFilter) => {
-    try {
-      const res = await apiClient.get('/members');
-      const members = res.data || [];
-      setAllMembers(members);
-      setFilteredMembers(applyFilter('', initialFilter, members));
-      hasFetchedRef.current = true;
-    } catch (err) {
-      console.log('[MembersList] Error:', err.message);
-    } finally {
-      setLoading(false);
-      setLoadingFilter(false);
-    }
-  }, [applyFilter]);
+  const fetchMembers = useCallback(async () => {
+    const res = await apiClient.get('/members');
+    return res.data || [];
+  }, []);
 
-  useFocusEffect(useCallback(() => {
+  const membersQuery = useQuery({
+    queryKey: ['members'],
+    queryFn: fetchMembers,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+  });
+
+  const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
+
+  useEffect(() => {
     const filterParam = route.params?.filter || 'all';
     setActiveFilter(filterParam);
-    if (!hasFetchedRef.current) {
-      setLoading(true);
-      fetchMembersOnce(filterParam);
-    }
-  }, [route.params?.filter, fetchMembersOnce]));
+  }, [route.params?.filter]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -229,34 +220,9 @@ const MembersListScreen = ({ navigation, route }) => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  useEffect(() => {
-    if (loading || allMembers.length === 0) return;
-    if (filterDelayRef.current) clearTimeout(filterDelayRef.current);
-
-    setLoadingFilter(true);
-    Animated.timing(listOpacity, {
-      toValue: 0.6,
-      duration: 100,
-      useNativeDriver: true,
-    }).start();
-
-    filterDelayRef.current = setTimeout(() => {
-      setFilteredMembers(applyFilter(debouncedSearch, activeFilter, allMembers));
-      Animated.timing(listOpacity, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }).start(() => setLoadingFilter(false));
-    }, 150);
-
-    return () => {
-      if (filterDelayRef.current) clearTimeout(filterDelayRef.current);
-    };
-  }, [debouncedSearch, activeFilter, allMembers, applyFilter, loading, listOpacity]);
-
-  useEffect(() => () => {
-    if (filterDelayRef.current) clearTimeout(filterDelayRef.current);
-  }, []);
+  const filteredMembers = useMemo(() => {
+    return applyFilter(debouncedSearch, activeFilter, members);
+  }, [applyFilter, debouncedSearch, activeFilter, members]);
 
   const onSearch = (text) => {
     setSearch(text);
@@ -278,9 +244,11 @@ const MembersListScreen = ({ navigation, route }) => {
           onPress: async () => {
             try {
               await apiClient.delete(`/members/${member._id}`);
-              const nextAllMembers = allMembers.filter((m) => m._id !== member._id);
-              setAllMembers(nextAllMembers);
-              setFilteredMembers(applyFilter(debouncedSearch, activeFilter, nextAllMembers));
+              queryClient.setQueryData(['members'], (prev) => {
+                const arr = Array.isArray(prev) ? prev : [];
+                return arr.filter((m) => m._id !== member._id);
+              });
+              queryClient.invalidateQueries({ queryKey: ['members'], refetchType: 'none' });
             } catch (err) {
               Alert.alert('Error', err.response?.data?.error || 'Failed to delete');
             }
@@ -288,7 +256,7 @@ const MembersListScreen = ({ navigation, route }) => {
         },
       ]
     );
-  }, [allMembers, applyFilter, debouncedSearch, activeFilter]);
+  }, [queryClient]);
 
   const sortedMembers = React.useMemo(() => {
     if (!sortBy) return filteredMembers;
@@ -400,7 +368,7 @@ const MembersListScreen = ({ navigation, route }) => {
         )}
       </View>
 
-      {loading ? (
+      {membersQuery.isLoading && members.length === 0 ? (
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <Animated.View style={{ flex: 1, opacity: loadingFilter ? 0.6 : listOpacity }}>
@@ -435,7 +403,7 @@ const MembersListScreen = ({ navigation, route }) => {
         </Animated.View>
       )}
 
-      {loadingFilter && !loading && (
+      {membersQuery.isFetching && members.length > 0 && (
         <View style={styles.filterLoaderOverlay} pointerEvents="none">
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>

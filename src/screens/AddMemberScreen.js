@@ -3,10 +3,13 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, Image, Modal, Animated, Platform,
 } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 // ─── Date Helpers ────────────────────────────────────
 const formatDateDisplay = (date) => {
@@ -257,6 +260,7 @@ const dropStyles = StyleSheet.create({
 // ─── Main AddMemberScreen ────────────────────────────
 // ═══════════════════════════════════════════════════════
 const AddMemberScreen = ({ navigation }) => {
+  const queryClient = useQueryClient();
   const [plans, setPlans] = useState([]);
   const [form, setForm] = useState({
     photo: '', name: '', mobile: '', email: '',
@@ -326,20 +330,51 @@ const AddMemberScreen = ({ navigation }) => {
         paidAmount: parseFloat(form.paidAmount) || 0,
       };
       console.log('[AddMember] Saving member:', data.name, 'plan:', data.plan);
-      await apiClient.post('/members', data);
+      const res = await apiClient.post('/members', data);
+      const newMember = res?.data;
       setSaving(false);
 
-      // Show success banner
-      setShowSuccess(true);
-      Animated.timing(successAnim, {
-        toValue: 1, duration: 300, useNativeDriver: true,
-      }).start();
+      // Optimistic cache update: show new member instantly in Members list
+      if (newMember) {
+        queryClient.setQueryData(['members'], (oldData = []) => {
+          const arr = Array.isArray(oldData) ? oldData : [];
+          return [newMember, ...arr];
+        });
+      }
 
-      // Navigate to Dashboard after 1.5s
+      // Reset form state to avoid stale data if screen remains mounted briefly
+      setForm({
+        photo: '', name: '', mobile: '', email: '',
+        plan: '', paidAmount: '', referredBy: '',
+      });
+      setSelectedPlan(null);
+
+      // Success feedback first, then navigate (smooth, no flicker)
+      Toast.show({
+        type: 'success',
+        text1: 'Member added',
+        text2: 'Member added successfully',
+      });
+
+      // Background sync: mark stale but don't refetch immediately
+      queryClient.invalidateQueries({ queryKey: ['members'], refetchType: 'none' });
+
+      // Completely reset navigation state to the Members tab/list
       setTimeout(() => {
-        setShowSuccess(false);
-        navigation.getParent()?.navigate('Dashboard');
-      }, 1500);
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'Members',
+                params: {
+                  screen: 'MembersList',
+                },
+              },
+            ],
+          })
+        );
+      }, 450);
     } catch (err) {
       setSaving(false);
       const errMsg = err.response?.data?.error || err.message || 'Failed to add member';
