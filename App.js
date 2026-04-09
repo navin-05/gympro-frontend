@@ -45,6 +45,7 @@ import ReferralLeaderboardScreen from './src/screens/ReferralLeaderboardScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import RevenueAnalysisScreen from './src/screens/RevenueAnalysisScreen';
 import GymProfileSetupScreen from './src/screens/GymProfileSetupScreen';
+import EnquiriesScreen from './src/features/enquiries/screens/EnquiriesScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -94,6 +95,7 @@ const HomeStack = () => (
     }}
   >
     <Stack.Screen name="DashboardHome" component={DashboardScreen} />
+    <Stack.Screen name="Enquiries" component={EnquiriesScreen} />
     <Stack.Screen name="Notifications" component={NotificationsScreen} />
     <Stack.Screen name="Transformations" component={TransformationScreen} />
     <Stack.Screen name="ReferralLeaderboard" component={ReferralLeaderboardScreen} />
@@ -308,6 +310,7 @@ const linking = Platform.OS === 'web' ? {
       Dashboard: {
         screens: {
           DashboardHome: '',
+          Enquiries: 'enquiries',
           Notifications: 'notifications',
           Transformations: 'transformations',
           ReferralLeaderboard: 'referral-leaderboard',
