@@ -16,8 +16,9 @@ import Colors from '../../../theme/colors';
 import { useTopPadding } from '../../../utils/useTopPadding';
 import EnquiryCard from '../components/EnquiryCard';
 import AddEnquiryModal from '../components/AddEnquiryModal';
+import EditEnquiryModal from '../components/EditEnquiryModal';
 import { DEFAULT_TAG_OPTIONS, ENQUIRY_STATUS, STATUS_LABELS } from '../constants';
-import { createEnquiry, getEnquiries } from '../api';
+import { createEnquiry, deleteEnquiry, getEnquiries, updateEnquiry } from '../api';
 import { buildEnquiryPayload, isFollowUpDue, openDialer, openWhatsApp } from '../utils';
 
 const EnquiriesScreen = ({ navigation }) => {
@@ -27,6 +28,9 @@ const EnquiriesScreen = ({ navigation }) => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingEnquiry, setEditingEnquiry] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
   const bellAnim = useRef(new Animated.Value(0)).current;
 
   const enquiriesQuery = useQuery({
@@ -93,6 +97,96 @@ const EnquiriesScreen = ({ navigation }) => {
     }
   };
 
+  const getEnquiryId = (enquiry) => enquiry?._id ?? enquiry?.id;
+
+  const normalizeEnquiryId = (value) => {
+    if (value == null || value === '') return '';
+    return String(value);
+  };
+
+  const applyLocalUpdate = (id, patch) => {
+    const target = normalizeEnquiryId(id);
+    queryClient.setQueryData(['enquiries'], (oldData = []) => oldData.map((item) => {
+      const itemId = normalizeEnquiryId(item?._id ?? item?.id);
+      if (itemId !== target) return item;
+      return { ...item, ...patch };
+    }));
+  };
+
+  const handleQuickStatusChange = async (enquiry, status) => {
+    const id = normalizeEnquiryId(getEnquiryId(enquiry));
+    if (!id || enquiry.status === status) return;
+
+    console.log('[Enquiries] status change click:', { id, status });
+    const prevStatus = enquiry.status;
+    applyLocalUpdate(id, { status });
+    try {
+      console.log('[Enquiries] PUT /enquiries/:id', id, { status });
+      await updateEnquiry(id, { status });
+    } catch (error) {
+      applyLocalUpdate(id, { status: prevStatus });
+      Alert.alert('Update failed', error?.response?.data?.error || error?.message || 'Failed to update status.');
+    }
+  };
+
+  const handleEditOpen = (enquiry) => {
+    setOpenMenuId(null);
+    setEditingEnquiry(enquiry);
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async (form) => {
+    if (!editingEnquiry) return false;
+    const id = normalizeEnquiryId(getEnquiryId(editingEnquiry));
+    if (!id) return false;
+
+    const payload = buildEnquiryPayload(form);
+    const previous = editingEnquiry;
+    applyLocalUpdate(id, payload);
+    try {
+      const updated = await updateEnquiry(id, payload);
+      applyLocalUpdate(id, updated);
+      return true;
+    } catch (error) {
+      applyLocalUpdate(id, previous);
+      Alert.alert('Update failed', error?.response?.data?.error || error?.message || 'Failed to update enquiry.');
+      return false;
+    }
+  };
+
+  const handleDelete = async (rawId) => {
+    const id = normalizeEnquiryId(rawId);
+    if (!id) {
+      console.log('[Enquiries] delete skipped: missing _id');
+      return;
+    }
+    setOpenMenuId(null);
+    console.log('Deleting:', id);
+    const previous = queryClient.getQueryData(['enquiries']) ?? enquiries;
+    queryClient.setQueryData(['enquiries'], (oldData = []) => oldData.filter((item) => (
+      normalizeEnquiryId(item?._id ?? item?.id) !== id
+    )));
+    try {
+      console.log('[Enquiries] DELETE /enquiries/:id', id);
+      await deleteEnquiry(id);
+    } catch (error) {
+      queryClient.setQueryData(['enquiries'], previous);
+      console.error('[Enquiries] delete failed', error);
+      Alert.alert('Delete failed', error?.response?.data?.error || error?.message || 'Failed to delete enquiry.');
+    }
+  };
+
+  const handleMenuToggle = (id) => {
+    const next = normalizeEnquiryId(id);
+    console.log('[Enquiries] menu toggle:', next);
+    setOpenMenuId((prev) => (normalizeEnquiryId(prev) === next ? null : next));
+  };
+
+  const handleBack = () => {
+    console.log('[Enquiries] Back clicked');
+    navigation.navigate('DashboardHome');
+  };
+
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -108,7 +202,7 @@ const EnquiriesScreen = ({ navigation }) => {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack} accessibilityRole="button" accessibilityLabel="Back to dashboard">
             <Ionicons name="arrow-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -207,10 +301,16 @@ const EnquiriesScreen = ({ navigation }) => {
         <View style={{ marginTop: 10 }}>
           {filteredEnquiries.map((enquiry) => (
             <EnquiryCard
-              key={enquiry.id}
+              key={normalizeEnquiryId(getEnquiryId(enquiry))}
               enquiry={enquiry}
               onCallPress={handleCall}
               onWhatsAppPress={handleWhatsApp}
+              onQuickStatusChange={handleQuickStatusChange}
+              onOpenMenu={handleMenuToggle}
+              onCloseMenu={() => setOpenMenuId(null)}
+              onEditPress={handleEditOpen}
+              onDeletePress={handleDelete}
+              isMenuOpen={normalizeEnquiryId(openMenuId) === normalizeEnquiryId(getEnquiryId(enquiry))}
             />
           ))}
         </View>
@@ -231,6 +331,15 @@ const EnquiriesScreen = ({ navigation }) => {
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSubmit={handleCreate}
+      />
+      <EditEnquiryModal
+        visible={showEditModal}
+        enquiry={editingEnquiry}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingEnquiry(null);
+        }}
+        onSubmit={handleEditSubmit}
       />
     </View>
   );
