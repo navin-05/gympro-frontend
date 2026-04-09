@@ -282,21 +282,17 @@ const NotificationsScreen = ({ navigation }) => {
         <View style={styles.headerLeft}>
           <TouchableOpacity
             onPress={() => {
-              console.log('[Notifications] nav state:', navigation?.getState?.());
-              if (navigation?.canGoBack?.() && navigation.canGoBack()) {
-                navigation.goBack();
+              // Notifications lives in HomeStack; target its root explicitly.
+              if (navigation?.navigate) {
+                navigation.navigate('DashboardHome');
                 return;
               }
 
-              // Dashboard is a bottom-tab route in this app (Tab.Screen name="Dashboard")
-              const tabNav = navigation?.getParent?.();
-              if (tabNav?.navigate) {
-                tabNav.navigate('Dashboard');
-                return;
+              // Fallback: target Dashboard tab + nested DashboardHome screen.
+              const parent = navigation?.getParent?.();
+              if (parent?.navigate) {
+                parent.navigate('Dashboard', { screen: 'DashboardHome' });
               }
-
-              // Final fallback: try the stack's dashboard home screen
-              navigation.navigate('DashboardHome');
             }}
             style={styles.backBtn}
             activeOpacity={0.7}
