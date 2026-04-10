@@ -4,6 +4,7 @@ import {
   ScrollView, Alert, ActivityIndicator, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 
@@ -105,46 +106,47 @@ const calStyles = StyleSheet.create({
 // ═══════════════════════════════════════════════════════
 const EditMemberScreen = ({ route, navigation }) => {
   const memberId = route.params?.memberId || route.params?.id;
-  const [plans, setPlans] = useState([]);
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({ name: '', mobile: '', email: '', paidAmount: '' });
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [startDate, setStartDate] = useState(new Date());
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  useEffect(() => { loadData(); }, []);
+  const memberQuery = useQuery({
+    queryKey: ['member', memberId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/members/${memberId}`);
+      return res.data;
+    },
+  });
 
-  const loadData = async () => {
-    try {
-      const [memberRes, plansRes] = await Promise.all([
-        apiClient.get(`/members/${memberId}`),
-        apiClient.get('/plans'),
-      ]);
-      const m = memberRes.data;
-      const fetchedPlans = plansRes.data || [];
-      setPlans(fetchedPlans);
+  const plansQuery = useQuery({
+    queryKey: ['plans'],
+    queryFn: async () => {
+      const res = await apiClient.get('/plans');
+      return res.data || [];
+    },
+  });
 
-      setForm({
-        name: m.name || '',
-        mobile: m.mobile || '',
-        email: m.email || '',
-        paidAmount: String(m.paidAmount || 0),
-      });
+  const plans = Array.isArray(plansQuery.data) ? plansQuery.data : [];
 
-      // Set start date
-      if (m.startDate) setStartDate(new Date(m.startDate));
+  useEffect(() => {
+    const m = memberQuery.data;
+    if (!m || plans.length === 0) return;
 
-      // Find and set the selected plan object
-      const planId = m.plan?._id || m.plan || '';
-      const planObj = fetchedPlans.find(p => p._id === planId);
-      if (planObj) setSelectedPlan(planObj);
-    } catch (err) {
-      console.log('[EditMember] Load error:', err.message);
-      Alert.alert('Error', 'Failed to load member data');
-    }
-    setLoading(false);
-  };
+    setForm({
+      name: m.name || '',
+      mobile: m.mobile || '',
+      email: m.email || '',
+      paidAmount: String(m.paidAmount || 0),
+    });
+
+    if (m.startDate) setStartDate(new Date(m.startDate));
+
+    const planId = m.plan?._id || m.plan || '';
+    const planObj = plans.find((p) => p._id === planId);
+    if (planObj) setSelectedPlan(planObj);
+  }, [memberQuery.data, plans]);
 
   const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -162,29 +164,42 @@ const EditMemberScreen = ({ route, navigation }) => {
     return Math.max(0, selectedPlan.price - paid);
   }, [selectedPlan, form.paidAmount]);
 
+  const updateMemberMutation = useMutation({
+    mutationFn: async (payload) => {
+      const res = await apiClient.put(`/members/${memberId}`, payload);
+      return res.data;
+    },
+    onSuccess: (updatedMember) => {
+      queryClient.setQueryData(['member', memberId], updatedMember);
+      queryClient.setQueryData(['members'], (old) => {
+        const prev = Array.isArray(old) ? old : [];
+        return prev.map((m) => (m._id === memberId ? { ...m, ...updatedMember } : m));
+      });
+      queryClient.invalidateQueries({ queryKey: ['members'] });
+      navigation.goBack();
+    },
+    onError: (err) => {
+      Alert.alert('Error', err.response?.data?.error || 'Failed to update');
+    },
+  });
+
   const handleSave = async () => {
     if (!form.name || !form.mobile) {
       Alert.alert('Error', 'Name and mobile are required');
       return;
     }
-    setSaving(true);
-    try {
-      await apiClient.put(`/members/${memberId}`, {
-        name: form.name,
-        mobile: form.mobile,
-        email: form.email,
-        plan: selectedPlan?._id || '',
-        startDate: formatDateISO(startDate),
-        paidAmount: parseFloat(form.paidAmount) || 0,
-      });
-      Alert.alert('Success', 'Member updated!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Failed to update');
-    }
-    setSaving(false);
+    updateMemberMutation.mutate({
+      name: form.name,
+      mobile: form.mobile,
+      email: form.email,
+      plan: selectedPlan?._id || '',
+      startDate: formatDateISO(startDate),
+      paidAmount: parseFloat(form.paidAmount) || 0,
+    });
   };
+
+  const loading = memberQuery.isLoading || plansQuery.isLoading;
+  const saving = updateMemberMutation.isPending;
 
   if (loading) {
     return (

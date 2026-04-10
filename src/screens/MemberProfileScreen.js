@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator, Image, Modal, TextInput, FlatList,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
@@ -11,31 +12,30 @@ import StatusBadge from '../components/StatusBadge';
 
 const MemberProfileScreen = ({ route, navigation }) => {
   const memberId = route.params?.memberId || route.params?.id;
-  const [member, setMember] = useState(null);
+  const queryClient = useQueryClient();
   const [attendance, setAttendance] = useState([]);
   const [renewals, setRenewals] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [renewModal, setRenewModal] = useState(false);
   const [plans, setPlans] = useState([]);
   const [renewForm, setRenewForm] = useState({ plan: '', paidAmount: '' });
   const [renewSaving, setRenewSaving] = useState(false);
   const [selectedRenewPlan, setSelectedRenewPlan] = useState(null);
 
+  const memberQuery = useQuery({
+    queryKey: ['member', memberId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/members/${memberId}`);
+      return res.data;
+    },
+  });
+
+  const member = memberQuery.data;
+
   useFocusEffect(useCallback(() => {
-    fetchMember();
+    memberQuery.refetch();
     fetchAttendance();
     fetchRenewals();
-  }, []));
-
-  const fetchMember = async () => {
-    try {
-      const res = await apiClient.get(`/members/${memberId}`);
-      setMember(res.data);
-    } catch (err) {
-      console.log('[MemberProfile] Member error:', err.message);
-    }
-    setLoading(false);
-  };
+  }, [memberId]));
 
   const fetchAttendance = async () => {
     try {
@@ -80,7 +80,15 @@ const MemberProfileScreen = ({ route, navigation }) => {
       const res = await apiClient.post(`/members/${memberId}/renewals`, body);
       console.log('[MemberProfile] Renew success:', JSON.stringify(res.data?.renewal?._id));
       setRenewModal(false);
-      fetchMember();
+      if (res.data?.member) {
+        queryClient.setQueryData(['member', memberId], res.data.member);
+        queryClient.setQueryData(['members'], (old) => {
+          const prev = Array.isArray(old) ? old : [];
+          return prev.map((m) => (m._id === memberId ? { ...m, ...res.data.member } : m));
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['member', memberId] });
+      queryClient.invalidateQueries({ queryKey: ['members'] });
       fetchRenewals();
       Alert.alert('Success', 'Membership renewed successfully!');
     } catch (err) {
@@ -98,6 +106,12 @@ const MemberProfileScreen = ({ route, navigation }) => {
         onPress: async () => {
           try {
             await apiClient.delete(`/members/${memberId}`);
+            queryClient.removeQueries({ queryKey: ['member', memberId] });
+            queryClient.setQueryData(['members'], (old) => {
+              const prev = Array.isArray(old) ? old : [];
+              return prev.filter((m) => m._id !== memberId);
+            });
+            queryClient.invalidateQueries({ queryKey: ['members'] });
             navigation.navigate('MembersList');
           } catch (err) {
             Alert.alert('Error', 'Failed to delete member');
@@ -114,7 +128,7 @@ const MemberProfileScreen = ({ route, navigation }) => {
     });
   };
 
-  if (loading || !member) {
+  if (memberQuery.isLoading || !member) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={Colors.primary} />

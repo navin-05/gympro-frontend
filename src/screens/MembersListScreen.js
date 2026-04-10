@@ -6,8 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCachedQuery } from '../hooks/useCachedQuery';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
@@ -201,7 +200,11 @@ const MembersListScreen = ({ navigation, route }) => {
     return res.data || [];
   }, []);
 
-  const membersQuery = useCachedQuery('members', fetchMembers, { staleMs: 30_000 });
+  const membersQuery = useQuery({
+    queryKey: ['members'],
+    queryFn: fetchMembers,
+    staleTime: 30_000,
+  });
 
   const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
 
