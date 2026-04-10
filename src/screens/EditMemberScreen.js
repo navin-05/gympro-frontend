@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, Modal,
@@ -8,6 +8,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Toast from 'react-native-toast-message';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
+
+const EMPTY_PLANS = [];
 
 // ─── Date Helpers ────────────────────────────────────
 const formatDateDisplay = (date) => {
@@ -112,6 +114,7 @@ const EditMemberScreen = ({ route, navigation }) => {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [startDate, setStartDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const saveLockRef = useRef(false);
 
   const memberQuery = useQuery({
     queryKey: ['member', memberId],
@@ -139,11 +142,12 @@ const EditMemberScreen = ({ route, navigation }) => {
     refetchOnReconnect: false,
   });
 
-  const plans = Array.isArray(plansQuery.data) ? plansQuery.data : [];
+  const plans = Array.isArray(plansQuery.data) ? plansQuery.data : EMPTY_PLANS;
 
   useEffect(() => {
     const m = memberQuery.data;
-    if (!m || plans.length === 0) return;
+    const list = Array.isArray(plansQuery.data) ? plansQuery.data : null;
+    if (!m || !list?.length) return;
 
     setForm({
       name: m.name || '',
@@ -155,9 +159,9 @@ const EditMemberScreen = ({ route, navigation }) => {
     if (m.startDate) setStartDate(new Date(m.startDate));
 
     const planId = m.plan?._id || m.plan || '';
-    const planObj = plans.find((p) => p._id === planId);
+    const planObj = list.find((p) => p._id === planId);
     if (planObj) setSelectedPlan(planObj);
-  }, [memberQuery.data, plans]);
+  }, [memberQuery.data, plansQuery.data]);
 
   const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -181,6 +185,7 @@ const EditMemberScreen = ({ route, navigation }) => {
       return res.data;
     },
     onSuccess: (updatedMember) => {
+      saveLockRef.current = false;
       queryClient.setQueryData(['member', memberId], updatedMember);
       queryClient.setQueryData(['members'], (old) => {
         const prev = Array.isArray(old) ? old : [];
@@ -200,6 +205,7 @@ const EditMemberScreen = ({ route, navigation }) => {
       }, 500);
     },
     onError: () => {
+      saveLockRef.current = false;
       Toast.show({
         type: 'error',
         text1: 'Update Failed',
@@ -208,11 +214,13 @@ const EditMemberScreen = ({ route, navigation }) => {
     },
   });
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!form.name || !form.mobile) {
       Alert.alert('Error', 'Name and mobile are required');
       return;
     }
+    if (updateMemberMutation.isPending || saveLockRef.current) return;
+    saveLockRef.current = true;
     updateMemberMutation.mutate({
       name: form.name,
       mobile: form.mobile,
