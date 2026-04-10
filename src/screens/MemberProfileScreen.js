@@ -10,7 +10,7 @@ import apiClient from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 
 const MemberProfileScreen = ({ route, navigation }) => {
-  const { memberId } = route.params;
+  const memberId = route.params?.memberId || route.params?.id;
   const [member, setMember] = useState(null);
   const [attendance, setAttendance] = useState([]);
   const [renewals, setRenewals] = useState([]);

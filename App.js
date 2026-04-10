@@ -320,8 +320,8 @@ const linking = Platform.OS === 'web' ? {
         screens: {
           MembersList: 'members',
           AddMember: 'add-member',
-          MemberProfile: 'member/:memberId',
-          EditMember: 'member/:memberId/edit',
+          MemberProfile: 'members/:id',
+          EditMember: 'members/:id/edit',
           Payment: 'payment',
         },
       },

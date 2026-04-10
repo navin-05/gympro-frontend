@@ -104,7 +104,7 @@ const calStyles = StyleSheet.create({
 // ─── EditMemberScreen ────────────────────────────────
 // ═══════════════════════════════════════════════════════
 const EditMemberScreen = ({ route, navigation }) => {
-  const { memberId } = route.params;
+  const memberId = route.params?.memberId || route.params?.id;
   const [plans, setPlans] = useState([]);
   const [form, setForm] = useState({ name: '', mobile: '', email: '', paidAmount: '' });
   const [selectedPlan, setSelectedPlan] = useState(null);
