@@ -28,6 +28,11 @@ const MemberProfileScreen = ({ route, navigation }) => {
       const res = await apiClient.get(`/members/${memberId}`);
       return res.data;
     },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const member = memberQuery.data;
@@ -41,7 +46,6 @@ const MemberProfileScreen = ({ route, navigation }) => {
         const prev = Array.isArray(old) ? old : [];
         return prev.filter((m) => m._id !== memberId);
       });
-      queryClient.invalidateQueries({ queryKey: ['members'] });
       Toast.show({
         type: 'success',
         text1: 'Member Deleted',
@@ -58,7 +62,6 @@ const MemberProfileScreen = ({ route, navigation }) => {
   });
 
   useFocusEffect(useCallback(() => {
-    memberQuery.refetch();
     fetchAttendance();
     fetchRenewals();
   }, [memberId]));
@@ -113,8 +116,6 @@ const MemberProfileScreen = ({ route, navigation }) => {
           return prev.map((m) => (m._id === memberId ? { ...m, ...res.data.member } : m));
         });
       }
-      queryClient.invalidateQueries({ queryKey: ['member', memberId] });
-      queryClient.invalidateQueries({ queryKey: ['members'] });
       fetchRenewals();
       Alert.alert('Success', 'Membership renewed successfully!');
     } catch (err) {

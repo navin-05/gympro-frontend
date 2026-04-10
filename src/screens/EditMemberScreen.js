@@ -119,6 +119,11 @@ const EditMemberScreen = ({ route, navigation }) => {
       const res = await apiClient.get(`/members/${memberId}`);
       return res.data;
     },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const plansQuery = useQuery({
@@ -127,6 +132,11 @@ const EditMemberScreen = ({ route, navigation }) => {
       const res = await apiClient.get('/plans');
       return res.data || [];
     },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const plans = Array.isArray(plansQuery.data) ? plansQuery.data : [];
@@ -176,7 +186,6 @@ const EditMemberScreen = ({ route, navigation }) => {
         const prev = Array.isArray(old) ? old : [];
         return prev.map((m) => (m._id === memberId ? { ...m, ...updatedMember } : m));
       });
-      queryClient.invalidateQueries({ queryKey: ['members'] });
 
       Toast.show({
         type: 'success',

@@ -196,7 +196,6 @@ const MembersListScreen = ({ navigation, route }) => {
   }, []);
 
   const fetchMembers = useCallback(async () => {
-    console.log('Members API called');
     const res = await apiClient.get('/members');
     return res.data || [];
   }, []);
@@ -216,7 +215,6 @@ const MembersListScreen = ({ navigation, route }) => {
   const onRefresh = async () => {
     try {
       setRefreshing(true);
-      console.log('🔄 Pull-to-refresh triggered');
       await membersQuery.refetch();
     } catch (err) {
       console.log('Refresh error:', err.message);
@@ -265,7 +263,6 @@ const MembersListScreen = ({ navigation, route }) => {
                 const arr = Array.isArray(prev) ? prev : [];
                 return arr.filter((m) => m._id !== member._id);
               });
-              queryClient.invalidateQueries({ queryKey: ['members'], refetchType: 'none' });
             } catch (err) {
               Alert.alert('Error', err.response?.data?.error || 'Failed to delete');
             }

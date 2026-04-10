@@ -15,11 +15,11 @@ import Colors from './src/theme/colors';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
-      gcTime: 5 * 60_000,
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
       refetchOnMount: false,
-      refetchOnReconnect: true,
-      refetchOnWindowFocus: true,
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
       retry: 1,
     },
   },

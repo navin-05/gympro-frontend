@@ -1,20 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-const DEFAULT_STALE_MS = 30_000;
-
-const isOlderThan = (ts, ms) => {
-  if (!ts) return true;
-  return (Date.now() - ts) > ms;
-};
+const DEFAULT_STALE_MS = 1000 * 60 * 5;
 
 /**
  * useCachedQuery(key, fetchFn)
  *
- * - Returns cached data immediately (React Query cache)
- * - On mount/focus, silently refetches in background only when stale
- * - Prevents duplicate calls (won't refetch if already fetching)
- * - Never clears old data (no flicker)
+ * Shared React Query wrapper: long stale window, no focus/reconnect refetch storms.
+ * Use pull-to-refresh or explicit refetch() when fresh data is required.
  */
 export function useCachedQuery(key, fetchFn, options = {}) {
   const queryClient = useQueryClient();
@@ -28,22 +21,11 @@ export function useCachedQuery(key, fetchFn, options = {}) {
       return await fetchFn();
     },
     staleTime: staleMs,
-    gcTime: options.gcTime ?? 5 * 60_000,
+    gcTime: options.gcTime ?? 10 * 60_000,
     refetchOnMount: false,
-    refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   });
-
-  const hasCache = query.data !== undefined;
-  const shouldBackgroundRefresh = hasCache && isOlderThan(query.dataUpdatedAt, staleMs);
-
-  useEffect(() => {
-    if (!shouldBackgroundRefresh) return;
-    if (query.isFetching) return;
-
-    console.log('🔥 BACKGROUND REFRESH:', key);
-    query.refetch({ cancelRefetch: false });
-  }, [key, shouldBackgroundRefresh, query.isFetching, query.refetch]);
 
   const invalidateCache = () => {
     queryClient.invalidateQueries({ queryKey, refetchType: 'none' });
@@ -52,7 +34,6 @@ export function useCachedQuery(key, fetchFn, options = {}) {
   return {
     ...query,
     invalidateCache,
-    hasCache,
+    hasCache: query.data !== undefined,
   };
 }
-

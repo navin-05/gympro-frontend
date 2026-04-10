@@ -6,7 +6,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
-import { useQueryClient } from '@tanstack/react-query';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 
 const formatExpiryDate = (dateLike) => {
@@ -145,14 +144,12 @@ const NotificationsScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [readIds, setReadIds] = useState(() => new Set());
-  const queryClient = useQueryClient();
-
   const fetchMembers = useCallback(async () => {
     const res = await apiClient.get('/members');
     return res.data || [];
   }, []);
 
-  const membersQuery = useCachedQuery('members', fetchMembers, { staleMs: 30_000 });
+  const membersQuery = useCachedQuery('members', fetchMembers);
   const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
 
   const notifications = getExpiryNotifications(members, readIds);
@@ -310,7 +307,6 @@ const NotificationsScreen = ({ navigation }) => {
             try {
               setGenerating(true);
               await membersQuery.refetch();
-              queryClient.invalidateQueries({ queryKey: ['members'], refetchType: 'none' });
             } finally {
               setGenerating(false);
             }

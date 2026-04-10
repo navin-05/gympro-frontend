@@ -43,7 +43,7 @@ const DashboardScreen = ({ navigation }) => {
     return res.data || [];
   }, []);
 
-  const membersQuery = useCachedQuery('members', fetchMembers, { staleMs: 30_000 });
+  const membersQuery = useCachedQuery('members', fetchMembers);
   const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
 
   const notificationCount = useMemo(() => {

@@ -1,9 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
   Modal, TextInput, Alert, ActivityIndicator, Platform,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
@@ -23,11 +22,12 @@ const PlansScreen = () => {
       const res = await apiClient.get('/plans');
       return res.data || [];
     },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
-
-  useFocusEffect(useCallback(() => {
-    plansQuery.refetch();
-  }, []));
 
   const plans = Array.isArray(plansQuery.data) ? plansQuery.data : [];
 
