@@ -196,6 +196,7 @@ const MembersListScreen = ({ navigation, route }) => {
   }, []);
 
   const fetchMembers = useCallback(async () => {
+    console.log('Members API called');
     const res = await apiClient.get('/members');
     return res.data || [];
   }, []);
@@ -203,7 +204,11 @@ const MembersListScreen = ({ navigation, route }) => {
   const membersQuery = useQuery({
     queryKey: ['members'],
     queryFn: fetchMembers,
-    staleTime: 30_000,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
@@ -212,10 +217,7 @@ const MembersListScreen = ({ navigation, route }) => {
     try {
       setRefreshing(true);
       console.log('🔄 Pull-to-refresh triggered');
-      const res = await apiClient.get('/members');
-      const next = res.data || [];
-      queryClient.setQueryData(['members'], next);
-      queryClient.invalidateQueries({ queryKey: ['members'], refetchType: 'none' });
+      await membersQuery.refetch();
     } catch (err) {
       console.log('Refresh error:', err.message);
     } finally {

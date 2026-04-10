@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Toast from 'react-native-toast-message';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 
@@ -176,10 +177,25 @@ const EditMemberScreen = ({ route, navigation }) => {
         return prev.map((m) => (m._id === memberId ? { ...m, ...updatedMember } : m));
       });
       queryClient.invalidateQueries({ queryKey: ['members'] });
-      navigation.goBack();
+
+      Toast.show({
+        type: 'success',
+        text1: 'Updated Successfully',
+        text2: `${updatedMember?.name || 'Member'} details updated`,
+        position: 'top',
+        visibilityTime: 2000,
+      });
+
+      setTimeout(() => {
+        navigation.replace('MemberProfile', { memberId });
+      }, 500);
     },
-    onError: (err) => {
-      Alert.alert('Error', err.response?.data?.error || 'Failed to update');
+    onError: () => {
+      Toast.show({
+        type: 'error',
+        text1: 'Update Failed',
+        text2: 'Please try again',
+      });
     },
   });
 

@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Image, Modal, TextInput, FlatList,
+  Alert, ActivityIndicator, Image, Modal, TextInput, FlatList, Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 import StatusBadge from '../components/StatusBadge';
@@ -30,6 +31,31 @@ const MemberProfileScreen = ({ route, navigation }) => {
   });
 
   const member = memberQuery.data;
+  const deleteMemberMutation = useMutation({
+    mutationFn: async () => {
+      return await apiClient.delete(`/members/${memberId}`);
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['member', memberId] });
+      queryClient.setQueryData(['members'], (old) => {
+        const prev = Array.isArray(old) ? old : [];
+        return prev.filter((m) => m._id !== memberId);
+      });
+      queryClient.invalidateQueries({ queryKey: ['members'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Member Deleted',
+      });
+      navigation.replace('MembersList');
+    },
+    onError: (err) => {
+      console.log('[MemberProfile] Delete error:', err?.response?.status, err?.response?.data || err?.message);
+      Toast.show({
+        type: 'error',
+        text1: 'Delete Failed',
+      });
+    },
+  });
 
   useFocusEffect(useCallback(() => {
     memberQuery.refetch();
@@ -99,23 +125,22 @@ const MemberProfileScreen = ({ route, navigation }) => {
   };
 
   const handleDelete = () => {
+    console.log('[MemberProfile] DELETE HANDLER TRIGGERED', memberId);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Delete member? This action cannot be undone.');
+      if (!confirmed) return;
+      console.log('[MemberProfile] DELETE CLICKED', memberId);
+      deleteMemberMutation.mutate();
+      return;
+    }
+
     Alert.alert('Delete Member', 'This action cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`/members/${memberId}`);
-            queryClient.removeQueries({ queryKey: ['member', memberId] });
-            queryClient.setQueryData(['members'], (old) => {
-              const prev = Array.isArray(old) ? old : [];
-              return prev.filter((m) => m._id !== memberId);
-            });
-            queryClient.invalidateQueries({ queryKey: ['members'] });
-            navigation.navigate('MembersList');
-          } catch (err) {
-            Alert.alert('Error', 'Failed to delete member');
-          }
+        onPress: () => {
+          console.log('[MemberProfile] DELETE CLICKED', memberId);
+          deleteMemberMutation.mutate();
         },
       },
     ]);

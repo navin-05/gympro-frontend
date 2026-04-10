@@ -1,33 +1,73 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  Modal, TextInput, Alert, ActivityIndicator,
+  Modal, TextInput, Alert, ActivityIndicator, Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 import PlanCard from '../components/PlanCard';
 
 const PlansScreen = () => {
-  const [plans, setPlans] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [form, setForm] = useState({ planName: '', durationDays: '', price: '' });
-  const [saving, setSaving] = useState(false);
 
-  useFocusEffect(useCallback(() => { fetchPlans(); }, []));
-
-  const fetchPlans = async () => {
-    try {
+  const plansQuery = useQuery({
+    queryKey: ['plans'],
+    queryFn: async () => {
       const res = await apiClient.get('/plans');
-      setPlans(res.data);
-    } catch (err) {
-      console.log('Plans error:', err.message);
-    }
-    setLoading(false);
-  };
+      return res.data || [];
+    },
+  });
+
+  useFocusEffect(useCallback(() => {
+    plansQuery.refetch();
+  }, []));
+
+  const plans = Array.isArray(plansQuery.data) ? plansQuery.data : [];
+
+  const savePlanMutation = useMutation({
+    mutationFn: async ({ data, planId }) => {
+      if (planId) {
+        const res = await apiClient.put(`/plans/${planId}`, data);
+        return res.data;
+      }
+      const res = await apiClient.post('/plans', data);
+      return res.data;
+    },
+    onSuccess: () => {
+      setModalVisible(false);
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
+    },
+    onError: (err) => {
+      Alert.alert('Error', err.response?.data?.error || 'Failed to save plan');
+    },
+  });
+
+  const deletePlanMutation = useMutation({
+    mutationFn: async (id) => {
+      return await apiClient.delete(`/plans/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
+      Toast.show({
+        type: 'success',
+        text1: 'Plan Deleted',
+      });
+    },
+    onError: (err) => {
+      console.log('[Plans] Delete error:', err?.response?.status, err?.response?.data || err?.message);
+      Toast.show({
+        type: 'error',
+        text1: 'Delete Failed',
+      });
+    },
+  });
 
   const openAdd = () => {
     setEditingPlan(null);
@@ -50,44 +90,37 @@ const PlansScreen = () => {
       Alert.alert('Error', 'Please fill all fields');
       return;
     }
-    setSaving(true);
-    try {
-      const data = {
-        planName: form.planName,
-        durationDays: parseInt(form.durationDays),
-        price: parseFloat(form.price),
-      };
-      if (editingPlan) {
-        await apiClient.put(`/plans/${editingPlan._id}`, data);
-      } else {
-        await apiClient.post('/plans', data);
-      }
-      setModalVisible(false);
-      fetchPlans();
-    } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Failed to save plan');
-    }
-    setSaving(false);
+    const data = {
+      planName: form.planName,
+      durationDays: parseInt(form.durationDays),
+      price: parseFloat(form.price),
+    };
+    savePlanMutation.mutate({ data, planId: editingPlan?._id });
   };
 
   const handleDelete = (id) => {
+    console.log('[Plans] DELETE HANDLER TRIGGERED', id);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm('Delete this plan?');
+      if (!confirmed) return;
+      console.log('[Plans] DELETE CLICKED', id);
+      deletePlanMutation.mutate(id);
+      return;
+    }
+
     Alert.alert('Delete Plan', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`/plans/${id}`);
-            fetchPlans();
-          } catch (err) {
-            Alert.alert('Error', 'Failed to delete plan');
-          }
+        onPress: () => {
+          console.log('[Plans] DELETE CLICKED', id);
+          deletePlanMutation.mutate(id);
         },
       },
     ]);
   };
 
-  if (loading) {
+  if (plansQuery.isLoading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -159,10 +192,10 @@ const PlansScreen = () => {
             </View>
 
             <TouchableOpacity
-              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-              onPress={handleSave} disabled={saving}
+              style={[styles.saveBtn, savePlanMutation.isPending && { opacity: 0.7 }]}
+              onPress={handleSave} disabled={savePlanMutation.isPending}
             >
-              {saving ? (
+              {savePlanMutation.isPending ? (
                 <ActivityIndicator color={Colors.background} />
               ) : (
                 <Text style={styles.saveBtnText}>
