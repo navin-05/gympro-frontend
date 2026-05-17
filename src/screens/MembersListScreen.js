@@ -212,6 +212,16 @@ const MembersListScreen = ({ navigation, route }) => {
 
   const members = Array.isArray(membersQuery.data) ? membersQuery.data : [];
 
+  const notificationCount = useMemo(() => {
+    const now = new Date();
+    return members.filter((m) => {
+      if (!m?.expiryDate) return false;
+      const expiry = new Date(m.expiryDate);
+      const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+      return !Number.isNaN(daysLeft) && daysLeft <= 7;
+    }).length;
+  }, [members]);
+
   const onRefresh = async () => {
     try {
       setRefreshing(true);
@@ -327,6 +337,19 @@ const MembersListScreen = ({ navigation, route }) => {
           <Text style={styles.title}>Members</Text>
           <Text style={styles.count}>{sortedMembers.length} member(s)</Text>
         </View>
+        <TouchableOpacity
+          style={styles.notifBtn}
+          onPress={() => navigation.navigate('Notifications')}
+        >
+          <Ionicons name="notifications-outline" size={22} color={Colors.text} />
+          {notificationCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {notificationCount > 99 ? '99+' : notificationCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.searchWrap}>
@@ -450,6 +473,18 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 26, fontWeight: '700', color: Colors.text },
   count: { fontSize: 14, color: Colors.textSecondary, marginTop: 2 },
+  notifBtn: {
+    width: 42, height: 42, borderRadius: 14, backgroundColor: Colors.card,
+    justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.border,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute', top: -6, right: -6,
+    backgroundColor: '#FF3B30', borderRadius: 10,
+    minWidth: 18, height: 18,
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
+  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.inputBg,
     borderRadius: 12, paddingHorizontal: 14, marginHorizontal: 20, marginBottom: 12,

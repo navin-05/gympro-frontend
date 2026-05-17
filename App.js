@@ -116,6 +116,7 @@ const MembersStack = () => (
     <Stack.Screen name="MemberProfile" component={MemberProfileScreen} />
     <Stack.Screen name="EditMember" component={EditMemberScreen} />
     <Stack.Screen name="Payment" component={PaymentScreen} />
+    <Stack.Screen name="Notifications" component={NotificationsScreen} />
   </Stack.Navigator>
 );
 
