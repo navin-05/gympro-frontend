@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
@@ -306,7 +306,15 @@ const NotificationsScreen = ({ navigation }) => {
           onPress={async () => {
             try {
               setGenerating(true);
+              const res = await apiClient.post('/notifications/generate');
+              const { success, message } = res.data;
               await membersQuery.refetch();
+              Alert.alert(
+                success ? '✅ Sent!' : '⚠️ Failed',
+                message || 'Notification processed',
+              );
+            } catch (err) {
+              Alert.alert('❌ Error', err?.response?.data?.message || err.message || 'Something went wrong');
             } finally {
               setGenerating(false);
             }
