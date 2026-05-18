@@ -8,6 +8,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import Toast from 'react-native-toast-message';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -228,9 +229,15 @@ const GymProfileScreen = () => {
       if (Platform.OS === 'ios') {
         setShowTimePicker(false);
       }
-      Alert.alert('Success', 'Automated notification settings saved.');
+      Toast.show({
+        type: 'success',
+        text1: 'Notification automation settings saved successfully',
+      });
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || err.response?.data?.message || 'Failed to save settings');
+      Toast.show({
+        type: 'error',
+        text1: err.response?.data?.error || err.response?.data?.message || 'Failed to save settings',
+      });
     }
     setSavingAutomation(false);
   };
