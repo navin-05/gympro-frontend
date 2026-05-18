@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, Image, Switch, Platform,
+  Modal, Pressable,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,6 +13,14 @@ import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_SCHEDULED_TIME = '09:00 PM';
+
+function getDeviceTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
 
 function formatTimeAmPm(date) {
   const h24 = date.getHours();
@@ -47,6 +56,22 @@ function parseTimeAmPmToDate(str) {
   return d;
 }
 
+function scheduledTimeTo24hValue(str) {
+  const d = parseTimeAmPmToDate(str);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function parse24hToAmPm(value) {
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return DEFAULT_SCHEDULED_TIME;
+  const h24 = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (Number.isNaN(h24) || Number.isNaN(min)) return DEFAULT_SCHEDULED_TIME;
+  const d = new Date();
+  d.setHours(h24, min, 0, 0);
+  return formatTimeAmPm(d);
+}
+
 const GymProfileScreen = () => {
   const { logout } = useAuth();
   const [form, setForm] = useState({
@@ -60,6 +85,8 @@ const GymProfileScreen = () => {
   const [timePickerDate, setTimePickerDate] = useState(() => parseTimeAmPmToDate(DEFAULT_SCHEDULED_TIME));
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [savingAutomation, setSavingAutomation] = useState(false);
+  const [webTimeValue, setWebTimeValue] = useState(() => scheduledTimeTo24hValue(DEFAULT_SCHEDULED_TIME));
+  const webTimeInputRef = useRef(null);
 
   const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -89,11 +116,27 @@ const GymProfileScreen = () => {
       const ns = meRes.data?.notificationSettings;
       if (ns) {
         setNotifEnabled(ns.enabled === true);
-        const st = typeof ns.scheduledTime === 'string' && ns.scheduledTime.trim()
-          ? ns.scheduledTime.trim()
-          : DEFAULT_SCHEDULED_TIME;
-        setNotifScheduledTime(st);
-        setTimePickerDate(parseTimeAmPmToDate(st));
+        let pickerDate;
+        if (
+          typeof ns.scheduledHour === 'number'
+          && typeof ns.scheduledMinute === 'number'
+          && ns.scheduledHour >= 0
+          && ns.scheduledHour <= 23
+          && ns.scheduledMinute >= 0
+          && ns.scheduledMinute <= 59
+        ) {
+          pickerDate = new Date();
+          pickerDate.setHours(ns.scheduledHour, ns.scheduledMinute, 0, 0);
+        } else {
+          const st = typeof ns.scheduledTime === 'string' && ns.scheduledTime.trim()
+            ? ns.scheduledTime.trim()
+            : DEFAULT_SCHEDULED_TIME;
+          pickerDate = parseTimeAmPmToDate(st);
+        }
+        const formatted = formatTimeAmPm(pickerDate);
+        setNotifScheduledTime(formatted);
+        setTimePickerDate(pickerDate);
+        setWebTimeValue(scheduledTimeTo24hValue(formatted));
       }
     } catch (err) {
       console.log('Profile load error:', err.message);
@@ -143,16 +186,44 @@ const GymProfileScreen = () => {
     }
     if (selectedDate) {
       setTimePickerDate(selectedDate);
-      setNotifScheduledTime(formatTimeAmPm(selectedDate));
+      const formatted = formatTimeAmPm(selectedDate);
+      setNotifScheduledTime(formatted);
+      setWebTimeValue(scheduledTimeTo24hValue(formatted));
     }
+  };
+
+  const openTimePicker = () => {
+    if (Platform.OS === 'web') {
+      const el = webTimeInputRef.current;
+      if (el && typeof el.showPicker === 'function') {
+        el.showPicker();
+      } else if (el) {
+        el.click();
+      }
+      return;
+    }
+    setShowTimePicker(true);
+  };
+
+  const onWebTimeInputChange = (e) => {
+    const value = e?.target?.value;
+    if (!value) return;
+    setWebTimeValue(value);
+    const formatted = parse24hToAmPm(value);
+    setNotifScheduledTime(formatted);
+    setTimePickerDate(parseTimeAmPmToDate(formatted));
   };
 
   const saveAutomationSettings = async () => {
     setSavingAutomation(true);
     try {
+      const tz = getDeviceTimezone();
       await apiClient.put('/notifications/automation', {
         enabled: notifEnabled,
+        scheduledHour: timePickerDate.getHours(),
+        scheduledMinute: timePickerDate.getMinutes(),
         scheduledTime: notifScheduledTime,
+        timezone: tz,
       });
       if (Platform.OS === 'ios') {
         setShowTimePicker(false);
@@ -182,7 +253,12 @@ const GymProfileScreen = () => {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      nestedScrollEnabled
+    >
       <Text style={styles.title}>Gym Profile</Text>
       <Text style={styles.subtitle}>Configure your gym information</Text>
 
@@ -227,43 +303,53 @@ const GymProfileScreen = () => {
         />
       </View>
 
-      <TouchableOpacity
+      <Pressable
         style={[styles.inputGroup, styles.timeRow]}
-        onPress={() => {
-          if (Platform.OS === 'web') {
-            Alert.alert(
-              'Time picker',
-              'Use the GymPro iOS or Android app for the clock-style time picker.',
-            );
-            return;
-          }
-          setShowTimePicker(true);
-        }}
-        activeOpacity={0.7}
+        onPress={openTimePicker}
+        accessibilityRole="button"
+        accessibilityLabel="Automated Message Time"
       >
+        {Platform.OS === 'web' && (
+          <input
+            ref={webTimeInputRef}
+            type="time"
+            value={webTimeValue}
+            onChange={onWebTimeInputChange}
+            style={styles.webTimeInput}
+            aria-label="Automated Message Time"
+          />
+        )}
         <Ionicons name="time-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-        <View style={styles.timeRowText}>
+        <View style={styles.timeRowText} pointerEvents="none">
           <Text style={styles.timeRowLabel}>Automated Message Time</Text>
           <Text style={styles.timeRowValue}>{notifScheduledTime}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-      </TouchableOpacity>
+      </Pressable>
 
-      {showTimePicker && Platform.OS === 'ios' && (
-        <View style={styles.iosPickerHeader}>
-          <TouchableOpacity onPress={() => setShowTimePicker(false)}>
-            <Text style={styles.iosPickerDone}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      {showTimePicker && Platform.OS !== 'web' && (
-        <DateTimePicker
-          value={timePickerDate}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={onAutomationTimeChange}
-        />
-      )}
+      <Modal
+        visible={showTimePicker && Platform.OS !== 'web'}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTimePicker(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowTimePicker(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.iosPickerHeader}>
+              <Text style={styles.modalTitle}>Select time</Text>
+              <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                <Text style={styles.iosPickerDone}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={timePickerDate}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={onAutomationTimeChange}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <TouchableOpacity
         style={[styles.automationSaveBtn, savingAutomation && { opacity: 0.7 }]}
@@ -347,12 +433,44 @@ const styles = StyleSheet.create({
   },
   switchRow: { justifyContent: 'space-between' },
   switchLabel: { flex: 1, fontSize: 15, color: Colors.text, marginRight: 8 },
-  timeRow: { minHeight: 56, alignItems: 'center' },
+  timeRow: { minHeight: 56, alignItems: 'center', position: 'relative', zIndex: 2 },
   timeRowText: { flex: 1 },
   timeRowLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 2 },
   timeRowValue: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  webTimeInput: Platform.OS === 'web' ? {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0,
+    cursor: 'pointer',
+    zIndex: 10,
+    margin: 0,
+    padding: 0,
+    border: 'none',
+  } : {},
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   iosPickerHeader: {
-    flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 8, paddingHorizontal: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
   },
   iosPickerDone: { fontSize: 16, fontWeight: '600', color: Colors.primary },
   automationSaveBtn: {
