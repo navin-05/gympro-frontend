@@ -1,14 +1,51 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, Image,
+  ScrollView, Alert, ActivityIndicator, Image, Switch, Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
+
+const DEFAULT_SCHEDULED_TIME = '09:00 PM';
+
+function formatTimeAmPm(date) {
+  const h24 = date.getHours();
+  const m = date.getMinutes();
+  const ampm = h24 >= 12 ? 'PM' : 'AM';
+  let h12 = h24 % 12;
+  if (h12 === 0) h12 = 12;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function parseTimeAmPmToDate(str) {
+  const s = (str || DEFAULT_SCHEDULED_TIME).trim();
+  const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  const d = new Date();
+  if (!match) {
+    d.setHours(21, 0, 0, 0);
+    return d;
+  }
+  let h12 = parseInt(match[1], 10);
+  const min = parseInt(match[2], 10);
+  const ap = match[3].toUpperCase();
+  if (h12 < 1 || h12 > 12 || min < 0 || min > 59) {
+    d.setHours(21, 0, 0, 0);
+    return d;
+  }
+  let h24;
+  if (ap === 'AM') {
+    h24 = h12 === 12 ? 0 : h12;
+  } else {
+    h24 = h12 === 12 ? 12 : h12 + 12;
+  }
+  d.setHours(h24, min, 0, 0);
+  return d;
+}
 
 const GymProfileScreen = () => {
   const { logout } = useAuth();
@@ -18,6 +55,11 @@ const GymProfileScreen = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [notifScheduledTime, setNotifScheduledTime] = useState(DEFAULT_SCHEDULED_TIME);
+  const [timePickerDate, setTimePickerDate] = useState(() => parseTimeAmPmToDate(DEFAULT_SCHEDULED_TIME));
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [savingAutomation, setSavingAutomation] = useState(false);
 
   const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -28,18 +70,30 @@ const GymProfileScreen = () => {
   const loadProfile = async () => {
     setLoading(true);
     try {
-      const res = await apiClient.get('/gym/profile');
-      if (res.data) {
+      const [gymRes, meRes] = await Promise.all([
+        apiClient.get('/gym/profile').catch(() => ({ data: null })),
+        apiClient.get('/auth/me').catch(() => ({ data: null })),
+      ]);
+      if (gymRes.data) {
         setForm({
-          gymName: res.data.gymName || '',
-          address: res.data.address || '',
-          city: res.data.city || '',
-          phone: res.data.phone || '',
-          mapLink: res.data.mapLink || '',
-          openingHours: res.data.openingHours || '',
-          logo: res.data.logo || '',
+          gymName: gymRes.data.gymName || '',
+          address: gymRes.data.address || '',
+          city: gymRes.data.city || '',
+          phone: gymRes.data.phone || '',
+          mapLink: gymRes.data.mapLink || '',
+          openingHours: gymRes.data.openingHours || '',
+          logo: gymRes.data.logo || '',
         });
         setHasProfile(true);
+      }
+      const ns = meRes.data?.notificationSettings;
+      if (ns) {
+        setNotifEnabled(ns.enabled === true);
+        const st = typeof ns.scheduledTime === 'string' && ns.scheduledTime.trim()
+          ? ns.scheduledTime.trim()
+          : DEFAULT_SCHEDULED_TIME;
+        setNotifScheduledTime(st);
+        setTimePickerDate(parseTimeAmPmToDate(st));
       }
     } catch (err) {
       console.log('Profile load error:', err.message);
@@ -78,6 +132,36 @@ const GymProfileScreen = () => {
       Alert.alert('Error', err.response?.data?.error || 'Failed to save');
     }
     setSaving(false);
+  };
+
+  const onAutomationTimeChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowTimePicker(false);
+      if (event?.type === 'dismissed') {
+        return;
+      }
+    }
+    if (selectedDate) {
+      setTimePickerDate(selectedDate);
+      setNotifScheduledTime(formatTimeAmPm(selectedDate));
+    }
+  };
+
+  const saveAutomationSettings = async () => {
+    setSavingAutomation(true);
+    try {
+      await apiClient.put('/notifications/automation', {
+        enabled: notifEnabled,
+        scheduledTime: notifScheduledTime,
+      });
+      if (Platform.OS === 'ios') {
+        setShowTimePicker(false);
+      }
+      Alert.alert('Success', 'Automated notification settings saved.');
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.error || err.response?.data?.message || 'Failed to save settings');
+    }
+    setSavingAutomation(false);
   };
 
   if (loading) {
@@ -129,6 +213,70 @@ const GymProfileScreen = () => {
         </View>
       ))}
 
+      <Text style={styles.sectionHeading}>Automated WhatsApp Notifications</Text>
+      <Text style={styles.sectionHint}>Daily membership summary via your existing WhatsApp setup.</Text>
+
+      <View style={[styles.inputGroup, styles.switchRow]}>
+        <Ionicons name="notifications-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+        <Text style={styles.switchLabel}>Enable Automated Notifications</Text>
+        <Switch
+          value={notifEnabled}
+          onValueChange={setNotifEnabled}
+          trackColor={{ false: Colors.border, true: Colors.primary }}
+          thumbColor={Colors.background}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={[styles.inputGroup, styles.timeRow]}
+        onPress={() => {
+          if (Platform.OS === 'web') {
+            Alert.alert(
+              'Time picker',
+              'Use the GymPro iOS or Android app for the clock-style time picker.',
+            );
+            return;
+          }
+          setShowTimePicker(true);
+        }}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="time-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+        <View style={styles.timeRowText}>
+          <Text style={styles.timeRowLabel}>Automated Message Time</Text>
+          <Text style={styles.timeRowValue}>{notifScheduledTime}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+      </TouchableOpacity>
+
+      {showTimePicker && Platform.OS === 'ios' && (
+        <View style={styles.iosPickerHeader}>
+          <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+            <Text style={styles.iosPickerDone}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {showTimePicker && Platform.OS !== 'web' && (
+        <DateTimePicker
+          value={timePickerDate}
+          mode="time"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onAutomationTimeChange}
+        />
+      )}
+
+      <TouchableOpacity
+        style={[styles.automationSaveBtn, savingAutomation && { opacity: 0.7 }]}
+        onPress={saveAutomationSettings}
+        disabled={savingAutomation}
+      >
+        {savingAutomation ? (
+          <ActivityIndicator color={Colors.background} />
+        ) : (
+          <Text style={styles.automationSaveBtnText}>Save notification automation</Text>
+        )}
+      </TouchableOpacity>
+
       <TouchableOpacity
         style={[styles.saveBtn, saving && { opacity: 0.7 }]}
         onPress={saveProfile} disabled={saving}
@@ -146,7 +294,6 @@ const GymProfileScreen = () => {
         activeOpacity={0.7}
         onPress={() => {
           console.log('[GymProfile] Logout button pressed');
-          // Alert.alert doesn't work on web, use window.confirm as fallback
           if (typeof window !== 'undefined' && window.confirm) {
             const confirmed = window.confirm('Are you sure you want to logout?');
             if (confirmed) {
@@ -192,6 +339,27 @@ const styles = StyleSheet.create({
   },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 16, color: Colors.text },
+  sectionHeading: {
+    fontSize: 16, fontWeight: '700', color: Colors.text, marginTop: 8, marginBottom: 6,
+  },
+  sectionHint: {
+    fontSize: 13, color: Colors.textSecondary, marginBottom: 14, lineHeight: 18,
+  },
+  switchRow: { justifyContent: 'space-between' },
+  switchLabel: { flex: 1, fontSize: 15, color: Colors.text, marginRight: 8 },
+  timeRow: { minHeight: 56, alignItems: 'center' },
+  timeRowText: { flex: 1 },
+  timeRowLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 2 },
+  timeRowValue: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  iosPickerHeader: {
+    flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 8, paddingHorizontal: 4,
+  },
+  iosPickerDone: { fontSize: 16, fontWeight: '600', color: Colors.primary },
+  automationSaveBtn: {
+    backgroundColor: Colors.primary, height: 48, borderRadius: 14,
+    justifyContent: 'center', alignItems: 'center', marginTop: 8, marginBottom: 4,
+  },
+  automationSaveBtnText: { fontSize: 15, fontWeight: '700', color: Colors.background },
   saveBtn: {
     backgroundColor: Colors.primary, height: 52, borderRadius: 14,
     justifyContent: 'center', alignItems: 'center', marginTop: 12,
