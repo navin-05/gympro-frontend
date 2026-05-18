@@ -32,6 +32,28 @@ function formatTimeAmPm(date) {
   return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+/** Wall-clock hour/minute from "09:00 PM" — independent of device timezone. */
+function parseAmPmToHourMinute(str) {
+  const s = (str || DEFAULT_SCHEDULED_TIME).trim();
+  const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) {
+    return { scheduledHour: 21, scheduledMinute: 0 };
+  }
+  let h12 = parseInt(match[1], 10);
+  const min = parseInt(match[2], 10);
+  const ap = match[3].toUpperCase();
+  if (h12 < 1 || h12 > 12 || min < 0 || min > 59) {
+    return { scheduledHour: 21, scheduledMinute: 0 };
+  }
+  let h24;
+  if (ap === 'AM') {
+    h24 = h12 === 12 ? 0 : h12;
+  } else {
+    h24 = h12 === 12 ? 12 : h12 + 12;
+  }
+  return { scheduledHour: h24, scheduledMinute: min };
+}
+
 function parseTimeAmPmToDate(str) {
   const s = (str || DEFAULT_SCHEDULED_TIME).trim();
   const match = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -219,10 +241,11 @@ const GymProfileScreen = () => {
     setSavingAutomation(true);
     try {
       const tz = getDeviceTimezone();
+      const { scheduledHour, scheduledMinute } = parseAmPmToHourMinute(notifScheduledTime);
       await apiClient.put('/notifications/automation', {
         enabled: notifEnabled,
-        scheduledHour: timePickerDate.getHours(),
-        scheduledMinute: timePickerDate.getMinutes(),
+        scheduledHour,
+        scheduledMinute,
         scheduledTime: notifScheduledTime,
         timezone: tz,
       });
