@@ -109,6 +109,7 @@ const GymProfileScreen = () => {
   const [timePickerDate, setTimePickerDate] = useState(() => parseTimeAmPmToDate(DEFAULT_SCHEDULED_TIME));
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [savingAutomation, setSavingAutomation] = useState(false);
+  const [savingWhatsappNumber, setSavingWhatsappNumber] = useState(false);
   const [webTimeValue, setWebTimeValue] = useState(() => scheduledTimeTo24hValue(DEFAULT_SCHEDULED_TIME));
   const webTimeInputRef = useRef(null);
 
@@ -244,19 +245,58 @@ const GymProfileScreen = () => {
     setTimePickerDate(parseTimeAmPmToDate(formatted));
   };
 
+  const buildAutomationPayload = () => {
+    const tz = getDeviceTimezone();
+    const { scheduledHour, scheduledMinute } = parseAmPmToHourMinute(notifScheduledTime);
+    const payload = {
+      enabled: notifEnabled,
+      scheduledHour,
+      scheduledMinute,
+      scheduledTime: notifScheduledTime,
+      timezone: tz,
+    };
+    const digits = whatsappNotifNumber.replace(/\D/g, '');
+    if (digits.length === 10) {
+      payload.whatsappNotificationNumber = digits;
+    }
+    return payload;
+  };
+
+  const saveWhatsappNotificationNumber = async () => {
+    if (whatsappNotifNumber.length !== 10) {
+      return;
+    }
+    setSavingWhatsappNumber(true);
+    try {
+      const payload = buildAutomationPayload();
+      console.log('[WA-NUM-DEBUG] Frontend payload (save number):', JSON.stringify(payload));
+      const res = await apiClient.put('/notifications/automation', payload);
+      const savedDigits = res.data?.notificationSettings?.whatsappNotificationNumber;
+      if (savedDigits) {
+        setWhatsappNotifNumber(String(savedDigits).replace(/\D/g, '').slice(-10));
+      }
+      console.log('[WA-NUM-DEBUG] Save response notificationSettings:', JSON.stringify(res.data?.notificationSettings ?? null));
+      Toast.show({
+        type: 'success',
+        text1: 'WhatsApp notification number saved successfully',
+        visibilityTime: 3500,
+      });
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: err.response?.data?.error || err.response?.data?.message || 'Failed to save WhatsApp notification number',
+        visibilityTime: 3500,
+      });
+    }
+    setSavingWhatsappNumber(false);
+  };
+
   const saveAutomationSettings = async () => {
     setSavingAutomation(true);
     try {
-      const tz = getDeviceTimezone();
-      const { scheduledHour, scheduledMinute } = parseAmPmToHourMinute(notifScheduledTime);
-      await apiClient.put('/notifications/automation', {
-        enabled: notifEnabled,
-        whatsappNotificationNumber: whatsappNotifNumber.replace(/\D/g, ''),
-        scheduledHour,
-        scheduledMinute,
-        scheduledTime: notifScheduledTime,
-        timezone: tz,
-      });
+      const payload = buildAutomationPayload();
+      console.log('[WA-NUM-DEBUG] Frontend payload (save automation):', JSON.stringify(payload));
+      await apiClient.put('/notifications/automation', payload);
       if (Platform.OS === 'ios') {
         setShowTimePicker(false);
       }
@@ -354,6 +394,22 @@ const GymProfileScreen = () => {
           keyboardType="phone-pad"
           maxLength={10}
         />
+        {whatsappNotifNumber.length === 10 && (
+          <TouchableOpacity
+            style={styles.whatsappSaveTick}
+            onPress={saveWhatsappNotificationNumber}
+            disabled={savingWhatsappNumber}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Save WhatsApp notification number"
+          >
+            {savingWhatsappNumber ? (
+              <ActivityIndicator size="small" color={Colors.success} />
+            ) : (
+              <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       <Pressable
@@ -492,6 +548,11 @@ const styles = StyleSheet.create({
   phoneRow: { marginBottom: 12 },
   phonePrefix: {
     fontSize: 16, fontWeight: '600', color: Colors.text, marginRight: 6,
+  },
+  whatsappSaveTick: {
+    marginLeft: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   timeRow: { minHeight: 56, alignItems: 'center', position: 'relative', zIndex: 2 },
   timeRowText: { flex: 1 },
