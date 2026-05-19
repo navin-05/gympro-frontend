@@ -104,6 +104,7 @@ const GymProfileScreen = () => {
   const [saving, setSaving] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
+  const [whatsappNotifNumber, setWhatsappNotifNumber] = useState('');
   const [notifScheduledTime, setNotifScheduledTime] = useState(DEFAULT_SCHEDULED_TIME);
   const [timePickerDate, setTimePickerDate] = useState(() => parseTimeAmPmToDate(DEFAULT_SCHEDULED_TIME));
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -139,6 +140,12 @@ const GymProfileScreen = () => {
       const ns = meRes.data?.notificationSettings;
       if (ns) {
         setNotifEnabled(ns.enabled === true);
+        if (ns.whatsappNotificationNumber) {
+          const digits = String(ns.whatsappNotificationNumber).replace(/\D/g, '');
+          setWhatsappNotifNumber(digits.length >= 10 ? digits.slice(-10) : digits);
+        } else {
+          setWhatsappNotifNumber('');
+        }
         let pickerDate;
         if (
           typeof ns.scheduledHour === 'number'
@@ -244,6 +251,7 @@ const GymProfileScreen = () => {
       const { scheduledHour, scheduledMinute } = parseAmPmToHourMinute(notifScheduledTime);
       await apiClient.put('/notifications/automation', {
         enabled: notifEnabled,
+        whatsappNotificationNumber: whatsappNotifNumber.replace(/\D/g, ''),
         scheduledHour,
         scheduledMinute,
         scheduledTime: notifScheduledTime,
@@ -330,6 +338,21 @@ const GymProfileScreen = () => {
           onValueChange={setNotifEnabled}
           trackColor={{ false: Colors.border, true: Colors.primary }}
           thumbColor={Colors.background}
+        />
+      </View>
+
+      <Text style={styles.fieldLabel}>WhatsApp Notification Number</Text>
+      <View style={[styles.inputGroup, styles.phoneRow]}>
+        <Ionicons name="logo-whatsapp" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+        <Text style={styles.phonePrefix}>+91</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="10-digit mobile number"
+          placeholderTextColor={Colors.placeholder}
+          value={whatsappNotifNumber}
+          onChangeText={(v) => setWhatsappNotifNumber(v.replace(/\D/g, '').slice(0, 10))}
+          keyboardType="phone-pad"
+          maxLength={10}
         />
       </View>
 
@@ -463,6 +486,13 @@ const styles = StyleSheet.create({
   },
   switchRow: { justifyContent: 'space-between' },
   switchLabel: { flex: 1, fontSize: 15, color: Colors.text, marginRight: 8 },
+  fieldLabel: {
+    fontSize: 12, color: Colors.textMuted, marginBottom: 6, marginTop: 4,
+  },
+  phoneRow: { marginBottom: 12 },
+  phonePrefix: {
+    fontSize: 16, fontWeight: '600', color: Colors.text, marginRight: 6,
+  },
   timeRow: { minHeight: 56, alignItems: 'center', position: 'relative', zIndex: 2 },
   timeRowText: { flex: 1 },
   timeRowLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 2 },
