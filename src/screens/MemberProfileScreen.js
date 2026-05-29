@@ -21,6 +21,12 @@ const MemberProfileScreen = ({ route, navigation }) => {
   const [renewForm, setRenewForm] = useState({ plan: '', paidAmount: '' });
   const [renewSaving, setRenewSaving] = useState(false);
   const [selectedRenewPlan, setSelectedRenewPlan] = useState(null);
+  const [walletData, setWalletData] = useState({ walletBalance: 0, transactions: [] });
+  const [walletTab, setWalletTab] = useState('referred');
+  const [referredTxns, setReferredTxns] = useState([]);
+  const [bonusTxns, setBonusTxns] = useState([]);
+  const [useWallet, setUseWallet] = useState(false);
+  const [walletAmount, setWalletAmount] = useState('');
 
   const memberQuery = useQuery({
     queryKey: ['member', memberId],
@@ -61,9 +67,25 @@ const MemberProfileScreen = ({ route, navigation }) => {
     },
   });
 
+  const fetchWallet = async () => {
+    try {
+      const [walletRes, referredRes, bonusRes] = await Promise.all([
+        apiClient.get(`/wallet/${memberId}`),
+        apiClient.get(`/wallet/${memberId}/referred`),
+        apiClient.get(`/wallet/${memberId}/bonus`),
+      ]);
+      setWalletData(walletRes.data || { walletBalance: 0, transactions: [] });
+      setReferredTxns(referredRes.data || []);
+      setBonusTxns(bonusRes.data || []);
+    } catch (err) {
+      console.log('[MemberProfile] Wallet error:', err.message);
+    }
+  };
+
   useFocusEffect(useCallback(() => {
     fetchAttendance();
     fetchRenewals();
+    fetchWallet();
   }, [memberId]));
 
   const fetchAttendance = async () => {
@@ -91,6 +113,8 @@ const MemberProfileScreen = ({ route, navigation }) => {
     } catch (err) {}
     setRenewForm({ plan: '', paidAmount: '' });
     setSelectedRenewPlan(null);
+    setUseWallet(false);
+    setWalletAmount('');
     setRenewModal(true);
   };
 
@@ -100,9 +124,15 @@ const MemberProfileScreen = ({ route, navigation }) => {
       return;
     }
     setRenewSaving(true);
+    const walletDiscount = useWallet ? Math.min(
+      parseFloat(walletAmount) || walletData.walletBalance,
+      walletData.walletBalance,
+      selectedRenewPlan?.price || Infinity
+    ) : 0;
     const body = {
       plan: renewForm.plan,
       paidAmount: parseFloat(renewForm.paidAmount) || 0,
+      walletDiscount,
     };
     console.log('[MemberProfile] Renewing — POST /members/' + memberId + '/renewals', JSON.stringify(body));
     try {
@@ -117,6 +147,7 @@ const MemberProfileScreen = ({ route, navigation }) => {
         });
       }
       fetchRenewals();
+      fetchWallet();
       Alert.alert('Success', 'Membership renewed successfully!');
     } catch (err) {
       console.log('[MemberProfile] Renew error:', err.message, err.response?.data);
@@ -221,6 +252,65 @@ const MemberProfileScreen = ({ route, navigation }) => {
             <Text style={[styles.infoValue, item.color && { color: item.color }]}>{item.value}</Text>
           </View>
         ))}
+      </View>
+
+      {/* ─── Wallet Section ────────────────────────── */}
+      <View style={styles.walletSection}>
+        <View style={styles.walletHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="wallet" size={22} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>Wallet</Text>
+          </View>
+          <View style={styles.walletBalanceBadge}>
+            <Text style={styles.walletBalanceText}>₹{walletData.walletBalance || member.walletBalance || 0}</Text>
+          </View>
+        </View>
+
+        <View style={styles.walletTabs}>
+          <TouchableOpacity
+            style={[styles.walletTab, walletTab === 'referred' && styles.walletTabActive]}
+            onPress={() => setWalletTab('referred')}
+          >
+            <Text style={[styles.walletTabText, walletTab === 'referred' && styles.walletTabTextActive]}>Referred</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.walletTab, walletTab === 'bonus' && styles.walletTabActive]}
+            onPress={() => setWalletTab('bonus')}
+          >
+            <Text style={[styles.walletTabText, walletTab === 'bonus' && styles.walletTabTextActive]}>Referral Bonus</Text>
+          </TouchableOpacity>
+        </View>
+
+        {(walletTab === 'referred' ? referredTxns : bonusTxns).length === 0 ? (
+          <View style={styles.walletEmpty}>
+            <Ionicons name="receipt-outline" size={28} color={Colors.textMuted} />
+            <Text style={styles.walletEmptyText}>
+              {walletTab === 'referred' ? 'No referral rewards yet' : 'No referral bonus yet'}
+            </Text>
+          </View>
+        ) : (
+          (walletTab === 'referred' ? referredTxns : bonusTxns).map((txn, i) => (
+            <View key={txn._id || i} style={styles.walletTxn}>
+              <View style={[styles.walletTxnIcon, { backgroundColor: Colors.primaryGlow }]}>
+                <Ionicons
+                  name={txn.amount >= 0 ? 'add-circle' : 'remove-circle'}
+                  size={18}
+                  color={txn.amount >= 0 ? Colors.active : Colors.expired}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.walletTxnDesc}>{txn.description}</Text>
+                <Text style={styles.walletTxnDate}>{formatDate(txn.createdAt)}</Text>
+              </View>
+              <Text style={[
+                styles.walletTxnAmount,
+                { color: txn.amount >= 0 ? Colors.active : Colors.expired }
+              ]}>
+                {txn.amount >= 0 ? '+' : ''}₹{Math.abs(txn.amount)}
+              </Text>
+            </View>
+          ))
+        )}
       </View>
 
       {/* ─── Renewal History Section ───────────────── */}
@@ -379,23 +469,88 @@ const MemberProfileScreen = ({ route, navigation }) => {
             {/* Due Amount — auto-calculated */}
             {selectedRenewPlan && (() => {
               const paid = parseFloat(renewForm.paidAmount) || 0;
-              const due = Math.max(0, selectedRenewPlan.price - paid);
+              const walletDisc = useWallet ? Math.min(
+                parseFloat(walletAmount) || walletData.walletBalance,
+                walletData.walletBalance,
+                selectedRenewPlan.price
+              ) : 0;
+              const totalPaid = paid + walletDisc;
+              const due = Math.max(0, selectedRenewPlan.price - totalPaid);
               return (
-                <View style={[styles.dueRow, { marginBottom: 12 }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons
-                      name={due > 0 ? 'alert-circle' : 'checkmark-circle'}
-                      size={18}
-                      color={due > 0 ? Colors.expired : Colors.active}
-                    />
-                    <Text style={[styles.dueLabel, { fontSize: 13 }]}>
-                      {due > 0 ? 'Due Amount' : 'Fully Paid'}
+                <>
+                  {/* Wallet Discount Section */}
+                  {(walletData.walletBalance || 0) > 0 && (
+                    <View style={styles.walletDiscountSection}>
+                      <View style={styles.walletDiscountHeader}>
+                        <Text style={{ fontSize: 13, color: Colors.textSecondary }}>Available Wallet: ₹{walletData.walletBalance}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.walletToggle}
+                        onPress={() => {
+                          setUseWallet(!useWallet);
+                          if (!useWallet) setWalletAmount(String(Math.min(walletData.walletBalance, selectedRenewPlan.price)));
+                        }}
+                      >
+                        <View style={[styles.walletCheckbox, useWallet && styles.walletCheckboxActive]}>
+                          {useWallet && <Ionicons name="checkmark" size={14} color={Colors.background} />}
+                        </View>
+                        <Text style={{ fontSize: 14, color: Colors.text, flex: 1 }}>Use Wallet Balance</Text>
+                      </TouchableOpacity>
+                      {useWallet && (
+                        <View style={styles.walletAmountRow}>
+                          <TouchableOpacity
+                            style={[styles.walletAmountChip, walletAmount === String(Math.min(walletData.walletBalance, selectedRenewPlan.price)) && styles.walletAmountChipActive]}
+                            onPress={() => setWalletAmount(String(Math.min(walletData.walletBalance, selectedRenewPlan.price)))}
+                          >
+                            <Text style={styles.walletAmountChipText}>Full (₹{Math.min(walletData.walletBalance, selectedRenewPlan.price)})</Text>
+                          </TouchableOpacity>
+                          <View style={styles.walletCustomInput}>
+                            <Text style={{ color: Colors.textMuted, marginRight: 4 }}>₹</Text>
+                            <TextInput
+                              style={{ flex: 1, fontSize: 14, color: Colors.text }}
+                              placeholder="Custom"
+                              placeholderTextColor={Colors.placeholder}
+                              keyboardType="numeric"
+                              value={walletAmount}
+                              onChangeText={(v) => {
+                                const num = parseFloat(v) || 0;
+                                const max = Math.min(walletData.walletBalance, selectedRenewPlan.price);
+                                setWalletAmount(num > max ? String(max) : v);
+                              }}
+                            />
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Summary */}
+                  {walletDisc > 0 && (
+                    <View style={[styles.dueRow, { marginBottom: 6, backgroundColor: Colors.primaryGlow }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="wallet" size={18} color={Colors.primary} />
+                        <Text style={[styles.dueLabel, { fontSize: 13 }]}>Wallet Discount</Text>
+                      </View>
+                      <Text style={[styles.dueValue, { fontSize: 16, color: Colors.primary }]}>-₹{walletDisc}</Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.dueRow, { marginBottom: 12 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons
+                        name={due > 0 ? 'alert-circle' : 'checkmark-circle'}
+                        size={18}
+                        color={due > 0 ? Colors.expired : Colors.active}
+                      />
+                      <Text style={[styles.dueLabel, { fontSize: 13 }]}>
+                        {due > 0 ? 'Due Amount' : 'Fully Paid'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.dueValue, { fontSize: 16, color: due > 0 ? Colors.expired : Colors.active }]}>
+                      ₹{due}
                     </Text>
                   </View>
-                  <Text style={[styles.dueValue, { fontSize: 16, color: due > 0 ? Colors.expired : Colors.active }]}>
-                    ₹{due}
-                  </Text>
-                </View>
+                </>
               );
             })()}
 
@@ -558,6 +713,78 @@ const styles = StyleSheet.create({
   },
   dueLabel: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary },
   dueValue: { fontSize: 18, fontWeight: '700' },
+
+  // ─── Wallet Section ──────────────────────
+  walletSection: { marginBottom: 20 },
+  walletHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12,
+  },
+  walletBalanceBadge: {
+    backgroundColor: Colors.primaryGlow, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  walletBalanceText: { fontSize: 18, fontWeight: '800', color: Colors.primary },
+  walletTabs: {
+    flexDirection: 'row', gap: 8, marginBottom: 12,
+  },
+  walletTab: {
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: Colors.card, alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  walletTabActive: {
+    backgroundColor: Colors.primaryGlow, borderColor: Colors.primary,
+  },
+  walletTabText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
+  walletTabTextActive: { color: Colors.primary, fontWeight: '600' },
+  walletEmpty: {
+    backgroundColor: Colors.card, borderRadius: 14, padding: 24, alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  walletEmptyText: { fontSize: 14, color: Colors.textMuted, marginTop: 8 },
+  walletTxn: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card,
+    borderRadius: 12, padding: 12, marginBottom: 6,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  walletTxnIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+  },
+  walletTxnDesc: { fontSize: 13, fontWeight: '500', color: Colors.text },
+  walletTxnDate: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  walletTxnAmount: { fontSize: 15, fontWeight: '700' },
+
+  // ─── Wallet Discount (Renewal) ─────────
+  walletDiscountSection: {
+    backgroundColor: Colors.card, borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  walletDiscountHeader: { marginBottom: 8 },
+  walletToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8,
+  },
+  walletCheckbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+    borderColor: Colors.textMuted, justifyContent: 'center', alignItems: 'center',
+  },
+  walletCheckboxActive: {
+    backgroundColor: Colors.primary, borderColor: Colors.primary,
+  },
+  walletAmountRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  walletAmountChip: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: Colors.inputBg, borderWidth: 1, borderColor: Colors.inputBorder,
+  },
+  walletAmountChipActive: {
+    backgroundColor: Colors.primaryGlow, borderColor: Colors.primary,
+  },
+  walletAmountChipText: { fontSize: 12, fontWeight: '600', color: Colors.text },
+  walletCustomInput: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.inputBg, borderRadius: 8, paddingHorizontal: 10,
+    borderWidth: 1, borderColor: Colors.inputBorder,
+  },
 });
 
 export default MemberProfileScreen;

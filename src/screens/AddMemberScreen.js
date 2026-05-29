@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, Image, Modal, Animated, Platform,
+  ScrollView, Alert, ActivityIndicator, Image, Modal, Animated, Platform, FlatList,
 } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
@@ -272,6 +272,106 @@ const AddMemberScreen = ({ navigation }) => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const successAnim = useRef(new Animated.Value(0)).current;
+  const [showReferralModal, setShowReferralModal] = useState(false);
+  const [referralSearch, setReferralSearch] = useState('');
+  const [allMembers, setAllMembers] = useState([]);
+  const [referralResults, setReferralResults] = useState([]);
+  const [referralSearching, setReferralSearching] = useState(false);
+  const [selectedReferrer, setSelectedReferrer] = useState(null);
+  const referralSearchTimer = useRef(null);
+
+  const enrichMembersWithReferralCodes = async (members) => {
+    const missing = members.filter((m) => !m.referralCode);
+    if (missing.length === 0) return members;
+
+    const codeById = new Map();
+    await Promise.all(
+      missing.map(async (m) => {
+        try {
+          const res = await apiClient.get(`/members/${m._id}`);
+          if (res.data?.referralCode) {
+            codeById.set(String(m._id), res.data.referralCode);
+          }
+        } catch (_) {
+          // keep member as-is if detail fetch fails
+        }
+      })
+    );
+
+    if (codeById.size === 0) return members;
+    return members.map((m) => {
+      const code = codeById.get(String(m._id));
+      return code ? { ...m, referralCode: code } : m;
+    });
+  };
+
+  const filterLocalMembers = (query, membersList = allMembers) => {
+    const q = query.trim().toLowerCase();
+    console.log(`[ReferralSearch] Search query received: "${query}" (trimmed: "${q}")`);
+
+    if (!q) {
+      setReferralResults(membersList);
+      console.log(`[ReferralSearch] Filtered results count: ${membersList.length} (empty query, showing all)`);
+      return;
+    }
+
+    const filtered = membersList.filter(member => {
+      const name = (member.name || '').toLowerCase();
+      const mobile = (member.mobile || '').toLowerCase();
+      const refCode = (member.referralCode || '').toLowerCase();
+
+      return name.includes(q) || mobile.includes(q) || refCode.includes(q);
+    });
+
+    setReferralResults(filtered);
+    console.log(`[ReferralSearch] Filtered results count: ${filtered.length} for query "${q}"`);
+  };
+
+  useEffect(() => {
+    if (!showReferralModal) {
+      setReferralSearch('');
+      setReferralResults([]);
+      if (referralSearchTimer.current) clearTimeout(referralSearchTimer.current);
+      return;
+    }
+
+    const loadReferralMembers = async () => {
+      setReferralSearching(true);
+      try {
+        let data = [];
+        try {
+          const res = await apiClient.get('/referrals/select-members');
+          data = res.data || [];
+          console.log(`[ReferralSearch] Loaded members count: ${data.length} (Source: referrals/select-members)`);
+        } catch (selectErr) {
+          console.log('[ReferralSearch] select-members unavailable, falling back to /members:', selectErr.message);
+          const res = await apiClient.get('/members');
+          data = res.data || [];
+          console.log(`[ReferralSearch] Loaded members count: ${data.length} (Source: /members fallback)`);
+        }
+
+        data = await enrichMembersWithReferralCodes(data);
+        setAllMembers(data);
+
+        if (form.referredBy) {
+          const match = data.find((m) => m.referralCode === form.referredBy);
+          if (match) setSelectedReferrer(match);
+        }
+
+        if (!referralSearch.trim()) {
+          setReferralResults(data);
+        } else {
+          filterLocalMembers(referralSearch, data);
+        }
+      } catch (err) {
+        console.log('[ReferralSearch] Failed to load members:', err.message);
+      } finally {
+        setReferralSearching(false);
+      }
+    };
+
+    loadReferralMembers();
+  }, [showReferralModal]);
 
   useEffect(() => { fetchPlans(); }, []);
 
@@ -348,6 +448,7 @@ const AddMemberScreen = ({ navigation }) => {
         plan: '', paidAmount: '', referredBy: '',
       });
       setSelectedPlan(null);
+      setSelectedReferrer(null);
 
       // Success feedback first, then navigate (smooth, no flicker)
       Toast.show({
@@ -410,7 +511,6 @@ const AddMemberScreen = ({ navigation }) => {
         { key: 'name', icon: 'person-outline', placeholder: 'Full Name' },
         { key: 'mobile', icon: 'call-outline', placeholder: 'Mobile Number', keyboard: 'phone-pad' },
         { key: 'email', icon: 'mail-outline', placeholder: 'Email (optional)', keyboard: 'email-address' },
-        { key: 'referredBy', icon: 'gift-outline', placeholder: 'Referral Code (optional)' },
       ].map((field) => (
         <View key={field.key} style={styles.inputGroup}>
           <Ionicons name={field.icon} size={20} color={Colors.textMuted} style={styles.inputIcon} />
@@ -425,6 +525,36 @@ const AddMemberScreen = ({ navigation }) => {
           />
         </View>
       ))}
+
+      {/* ─── Referral Code (Smart Selection) ────────── */}
+      <TouchableOpacity
+        style={styles.inputGroup}
+        onPress={() => setShowReferralModal(true)}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="gift-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+        <Text style={[
+          styles.input,
+          { paddingVertical: 14 },
+          !form.referredBy && { color: Colors.placeholder },
+        ]}>
+          {form.referredBy || 'Referral Code (optional)'}
+        </Text>
+        {form.referredBy ? (
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              setSelectedReferrer(null);
+              updateField('referredBy', '');
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
+        ) : (
+          <Ionicons name="chevron-down" size={18} color={Colors.textMuted} />
+        )}
+      </TouchableOpacity>
 
       {/* ─── DOJ (Date of Joining) ─────────────────── */}
       <Text style={styles.sectionTitle}>Date of Joining</Text>
@@ -568,6 +698,105 @@ const AddMemberScreen = ({ navigation }) => {
       <View style={{ height: 20 }} />
     </ScrollView>
 
+    {/* ─── Referral Search Modal ──────────────────── */}
+    <Modal visible={showReferralModal} transparent animationType="slide">
+      <View style={refStyles.overlay}>
+        <View style={refStyles.container}>
+          <View style={refStyles.header}>
+            <Text style={refStyles.title}>Select Referrer</Text>
+            <TouchableOpacity onPress={() => { setShowReferralModal(false); setReferralSearch(''); setReferralResults([]); }}>
+              <Ionicons name="close" size={24} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={refStyles.searchBox}>
+            <Ionicons name="search" size={20} color={Colors.textMuted} style={{ marginRight: 10 }} />
+            <TextInput
+              style={refStyles.searchInput}
+              placeholder="Search by name, mobile, or code"
+              placeholderTextColor={Colors.placeholder}
+              value={referralSearch}
+              autoFocus
+              onChangeText={(q) => {
+                setReferralSearch(q);
+                if (referralSearchTimer.current) clearTimeout(referralSearchTimer.current);
+                referralSearchTimer.current = setTimeout(() => {
+                  filterLocalMembers(q);
+                }, 250);
+              }}
+            />
+            {referralSearching && <ActivityIndicator size="small" color={Colors.primary} />}
+          </View>
+
+          <FlatList
+            data={referralResults}
+            keyExtractor={(item) => item._id}
+            style={{ maxHeight: 320 }}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={refStyles.resultItem}
+                onPress={async () => {
+                  let member = item;
+                  if (!member.referralCode && member._id) {
+                    try {
+                      const res = await apiClient.get(`/members/${member._id}`);
+                      if (res.data?.referralCode) {
+                        member = { ...member, referralCode: res.data.referralCode };
+                      }
+                    } catch (_) {}
+                  }
+                  setSelectedReferrer(member);
+                  updateField('referredBy', member.referralCode || '');
+                  setShowReferralModal(false);
+                  setReferralSearch('');
+                  setReferralResults([]);
+                }}
+              >
+                <View style={refStyles.resultAvatar}>
+                  {item.photo ? (
+                    <Image source={{ uri: item.photo }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                  ) : (
+                    <View style={refStyles.resultAvatarPlaceholder}>
+                      <Text style={refStyles.resultAvatarText}>{item.name?.charAt(0)?.toUpperCase()}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={refStyles.resultName}>{item.name}</Text>
+                  <Text style={refStyles.resultMeta}>
+                    {item.referralCode != null && item.referralCode !== ''
+                      ? `${item.referralCode} • ${item.mobile}`
+                      : `No Code • ${item.mobile}`}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={selectedReferrer?._id === item._id ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                  size={20}
+                  color={Colors.primary}
+                />
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              !referralSearching ? (
+                allMembers.length === 0 ? (
+                  <View style={refStyles.emptyState}>
+                    <Ionicons name="people-outline" size={32} color={Colors.textMuted} />
+                    <Text style={refStyles.emptyText}>No members available</Text>
+                  </View>
+                ) : referralSearch.trim().length > 0 ? (
+                  <View style={refStyles.emptyState}>
+                    <Ionicons name="search-outline" size={32} color={Colors.textMuted} />
+                    <Text style={refStyles.emptyText}>No members found</Text>
+                  </View>
+                ) : null
+              ) : null
+            }
+          />
+        </View>
+      </View>
+    </Modal>
+
     {/* ─── Success Toast Overlay ──────────────────── */}
     {showSuccess && (
       <Animated.View style={[
@@ -665,6 +894,41 @@ const styles = StyleSheet.create({
   successSubtitle: {
     fontSize: 14, color: Colors.textSecondary, textAlign: 'center',
   },
+});
+
+const refStyles = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: Colors.overlay, justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 20, paddingBottom: 40, maxHeight: '70%',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
+  },
+  title: { fontSize: 20, fontWeight: '700', color: Colors.text },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.inputBg,
+    borderRadius: 12, paddingHorizontal: 14, height: 48,
+    borderWidth: 1, borderColor: Colors.inputBorder, marginBottom: 12,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: Colors.text },
+  resultItem: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+    paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  resultAvatar: { marginRight: 12 },
+  resultAvatarPlaceholder: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primaryGlow,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  resultAvatarText: { fontSize: 16, fontWeight: '700', color: Colors.primary },
+  resultName: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  resultMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  emptyState: { alignItems: 'center', paddingVertical: 30 },
+  emptyText: { fontSize: 14, color: Colors.textMuted, marginTop: 8 },
 });
 
 export default AddMemberScreen;

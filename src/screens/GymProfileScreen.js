@@ -112,6 +112,9 @@ const GymProfileScreen = () => {
   const [savingWhatsappNumber, setSavingWhatsappNumber] = useState(false);
   const [webTimeValue, setWebTimeValue] = useState(() => scheduledTimeTo24hValue(DEFAULT_SCHEDULED_TIME));
   const webTimeInputRef = useRef(null);
+  const [referralReward, setReferralReward] = useState('200');
+  const [joiningReward, setJoiningReward] = useState('100');
+  const [savingReferral, setSavingReferral] = useState(false);
 
   const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -168,6 +171,16 @@ const GymProfileScreen = () => {
         setNotifScheduledTime(formatted);
         setTimePickerDate(pickerDate);
         setWebTimeValue(scheduledTimeTo24hValue(formatted));
+      }
+      // Load referral settings
+      try {
+        const refRes = await apiClient.get('/gym/referral-settings');
+        if (refRes.data) {
+          setReferralReward(String(refRes.data.referralReward ?? 200));
+          setJoiningReward(String(refRes.data.joiningReward ?? 100));
+        }
+      } catch (e) {
+        console.log('Referral settings load error:', e.message);
       }
     } catch (err) {
       console.log('Profile load error:', err.message);
@@ -366,6 +379,57 @@ const GymProfileScreen = () => {
           />
         </View>
       ))}
+
+      {/* ─── Referral Reward Settings ───────────────────── */}
+      <Text style={styles.sectionHeading}>Referral Reward Settings</Text>
+      <Text style={styles.sectionHint}>Configure wallet rewards for referrals.</Text>
+
+      <View style={styles.inputGroup}>
+        <Ionicons name="gift-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="Referrer Reward Amount (₹)"
+          placeholderTextColor={Colors.placeholder}
+          value={referralReward}
+          onChangeText={setReferralReward}
+          keyboardType="numeric"
+        />
+      </View>
+      <View style={styles.inputGroup}>
+        <Ionicons name="person-add-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="New Member Reward Amount (₹)"
+          placeholderTextColor={Colors.placeholder}
+          value={joiningReward}
+          onChangeText={setJoiningReward}
+          keyboardType="numeric"
+        />
+      </View>
+
+      <TouchableOpacity
+        style={[styles.automationSaveBtn, savingReferral && { opacity: 0.7 }]}
+        onPress={async () => {
+          setSavingReferral(true);
+          try {
+            await apiClient.put('/gym/referral-settings', {
+              referralReward: parseFloat(referralReward) || 0,
+              joiningReward: parseFloat(joiningReward) || 0,
+            });
+            Toast.show({ type: 'success', text1: 'Referral settings saved' });
+          } catch (err) {
+            Toast.show({ type: 'error', text1: err.response?.data?.error || 'Failed to save' });
+          }
+          setSavingReferral(false);
+        }}
+        disabled={savingReferral}
+      >
+        {savingReferral ? (
+          <ActivityIndicator color={Colors.background} />
+        ) : (
+          <Text style={styles.automationSaveBtnText}>Save Referral Settings</Text>
+        )}
+      </TouchableOpacity>
 
       <Text style={styles.sectionHeading}>Automated WhatsApp Notifications</Text>
       <Text style={styles.sectionHint}>Daily membership summary via your existing WhatsApp setup.</Text>

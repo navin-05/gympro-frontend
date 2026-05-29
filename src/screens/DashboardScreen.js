@@ -183,6 +183,23 @@ const DashboardScreen = ({ navigation }) => {
         </View>
         <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
       </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.enquiryHighlightCard}
+        onPress={() => navigation.navigate('ReferralManagement')}
+        accessibilityRole="button"
+        accessibilityLabel="Open referral management"
+      >
+        <View style={styles.enquiryHighlightLeft}>
+          <View style={[styles.enquiryHighlightIcon, { backgroundColor: Colors.secondary }]}>
+            <Ionicons name="gift" size={22} color={Colors.background} />
+          </View>
+          <View>
+            <Text style={styles.enquiryHighlightTitle}>Referrals</Text>
+            <Text style={styles.enquiryHighlightSubtitle}>Track & manage referral rewards</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={Colors.secondary} />
+      </TouchableOpacity>
       <View style={styles.actionsGrid}>
         {quickActions.map((action) => (
           <TouchableOpacity

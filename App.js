@@ -46,6 +46,7 @@ import NotificationsScreen from './src/screens/NotificationsScreen';
 import RevenueAnalysisScreen from './src/screens/RevenueAnalysisScreen';
 import GymProfileSetupScreen from './src/screens/GymProfileSetupScreen';
 import EnquiriesScreen from './src/features/enquiries/screens/EnquiriesScreen';
+import ReferralManagementScreen from './src/screens/ReferralManagementScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -99,6 +100,7 @@ const HomeStack = () => (
     <Stack.Screen name="Notifications" component={NotificationsScreen} />
     <Stack.Screen name="Transformations" component={TransformationScreen} />
     <Stack.Screen name="ReferralLeaderboard" component={ReferralLeaderboardScreen} />
+    <Stack.Screen name="ReferralManagement" component={ReferralManagementScreen} />
     <Stack.Screen name="RevenueAnalysis" component={RevenueAnalysisScreen} />
   </Stack.Navigator>
 );
@@ -315,6 +317,7 @@ const linking = Platform.OS === 'web' ? {
           Notifications: 'notifications',
           Transformations: 'transformations',
           ReferralLeaderboard: 'referral-leaderboard',
+          ReferralManagement: 'referral-management',
         },
       },
       Members: {
