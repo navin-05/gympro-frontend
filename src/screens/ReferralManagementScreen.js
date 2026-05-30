@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../theme/colors';
 import apiClient from '../api/client';
+import { useReferralPage } from '../hooks/useReferralPage';
 
 const FILTERS = [
   { key: 'all', label: 'All Time' },
@@ -75,15 +76,17 @@ function buildUsageFromTransactions(transactions) {
 }
 
 const ReferralManagementScreen = ({ navigation }) => {
-  const [referrals, setReferrals] = useState([]);
-  const [stats, setStats] = useState({
-    totalReferrals: 0,
-    totalRewardsPaid: 0,
-    topReferrer: null,
-    membersViaReferrals: 0,
-  });
   const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
+  const {
+    stats,
+    referrals,
+    statsRefreshing,
+    referralsLoading,
+    loadingMore,
+    hydratedFromCache,
+    loadPage,
+    loadMore,
+  } = useReferralPage(filter);
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -93,29 +96,12 @@ const ReferralManagementScreen = ({ navigation }) => {
   const [usageRecords, setUsageRecords] = useState([]);
   const [totalReferralEarnings, setTotalReferralEarnings] = useState(0);
 
-  const fetchData = useCallback(async (f) => {
-    try {
-      const [referralsRes, statsRes] = await Promise.all([
-        apiClient.get(`/referrals/list?filter=${f || filter}`),
-        apiClient.get('/referrals/stats'),
-      ]);
-      setReferrals(referralsRes.data || []);
-      setStats(statsRes.data || {});
-    } catch (err) {
-      console.log('[ReferralMgmt] Error:', err.message);
-    }
-    setLoading(false);
-  }, [filter]);
-
   useFocusEffect(useCallback(() => {
-    setLoading(true);
-    fetchData(filter);
+    loadPage(filter);
   }, [filter]));
 
   const onFilterChange = (f) => {
     setFilter(f);
-    setLoading(true);
-    fetchData(f);
   };
 
   const closeMemberDetail = () => {
@@ -421,16 +407,25 @@ const ReferralManagementScreen = ({ navigation }) => {
       </View>
 
       <Text style={styles.sectionTitle}>Referral Records</Text>
+      {statsRefreshing && hydratedFromCache ? (
+        <Text style={styles.refreshHint}>Updating stats…</Text>
+      ) : null}
     </View>
   );
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
+  const renderListFooter = () => {
+    if (loadingMore) {
+      return (
+        <View style={styles.listFooter}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+        </View>
+      );
+    }
+    return null;
+  };
+
+  const showReferralsEmpty = !referralsLoading && referrals.length === 0;
+  const showReferralsLoading = referralsLoading && referrals.length === 0 && !hydratedFromCache;
 
   return (
     <>
@@ -441,14 +436,23 @@ const ReferralManagementScreen = ({ navigation }) => {
         keyExtractor={(item) => item._id}
         renderItem={renderReferralItem}
         ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderListFooter}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="gift-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>No referrals yet</Text>
-            <Text style={styles.emptyHint}>
-              Referrals will appear here when members use referral codes
-            </Text>
-          </View>
+          showReferralsLoading ? (
+            <View style={styles.listFooter}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+            </View>
+          ) : showReferralsEmpty ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="gift-outline" size={48} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>No referrals yet</Text>
+              <Text style={styles.emptyHint}>
+                Referrals will appear here when members use referral codes
+              </Text>
+            </View>
+          ) : null
         }
       />
       {renderMemberDetailModal()}
@@ -496,6 +500,8 @@ const styles = StyleSheet.create({
   filterTextActive: { color: Colors.primary, fontWeight: '600' },
 
   sectionTitle: { fontSize: 16, fontWeight: '600', color: Colors.text, marginBottom: 12 },
+  refreshHint: { fontSize: 12, color: Colors.textMuted, marginBottom: 8 },
+  listFooter: { alignItems: 'center', paddingVertical: 16 },
 
   referralCard: {
     backgroundColor: Colors.card, borderRadius: 14, padding: 14, marginBottom: 10,
